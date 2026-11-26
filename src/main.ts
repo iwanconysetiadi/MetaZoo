@@ -213,6 +213,10 @@ class MetazooApp {
       onCameraPreset: (preset) => this.onCameraPreset(preset),
       onResetCamera: () => this.onResetCamera(),
       onFocusOptimum: () => this.onFocusOptimum(),
+      onAtmosphereChange: (mode) => {
+        this.sceneManager.setAtmosphere(mode);
+        this.waterRenderer.setAtmosphere(mode);
+      },
       onPresentationToggle: (on) => this.onPresentationToggle(on),
       onProbeEnabledChange: (on) => this.terrainProbe.setEnabled(on),
       onCrossSectionChange: (profile) => this.setCrossSectionLine(profile),

@@ -284,7 +284,45 @@ npm run lint
 
 Existing Phase 1/1.5 screenshots remain in the same directory.
 
-## 16. Remaining Limitations
+## 16. ## 17. Phase 2 Addendum — Engine Hardening (partial)
+
+## 17. Phase 2 Addendum — Engine Hardening
+
+The following engine-only hardening has been added without changing the UI/UX:
+
+- **Headless run API** — `SimulationEngine.runHeadless(world, setup)` runs a full
+  simulation without Three.js, returning final state, telemetry, completion
+  reason, evaluation count, iteration count, run metadata and a deterministic
+  state hash.
+- **Batch infrastructure** — `runBatch(world, configs)` supports repeated runs
+  with different seeds/configurations (no comparison UI).
+- **Capability declarations** — optimizers expose `getCapabilities()` and worlds
+  expose `getCapabilities()`; compatibility is checked during initialization
+  with `SUPPORTED`, `SUPPORTED_WITH_CAUTION`, and `UNSUPPORTED` levels.
+- **Structured candidate roles** — `CandidateRole` supports `id`, `label`,
+  `rank`, and metadata for future animal-inspired role systems.
+- **Engine event bus** — `EventBus` decouples engine/optimizer events from the
+  renderer; engine events include initialization, completion, failure, world
+  revision change, and budget exhaustion.
+- **Evaluation audit** — optional audit log records evaluation number, position,
+  true/observed values, feasibility, source, and cache status. Cache is OFF by
+  default and cache hits are tracked separately.
+- **Checkpoint / resume** — versioned `Checkpoint` captures logical state,
+  RNG state, evaluation count, clock, telemetry summary, and world time.
+  `resumeFromCheckpoint()` restores deterministic continuation.
+- **Run manager** — `RunManager` retains independent runs for a world.
+- **Export helpers** — `exportTelemetryCsv`, `exportRunHistory`, and
+  `exportRunBundle` produce config, telemetry CSV, and history JSON.
+- **Tests** — headless determinism, checkpoint resume, capabilities, and audit
+  logging are covered in `tests/simulation.test.ts`.
+
+Not yet implemented from the addendum: variable-population stress paths, full
+candidate lifecycle events, advanced visualization layers, camera-follow modes,
+stagnation hooks, and the full research UI. The simulation foundation is now
+ready for Phase 3 optimizer plugins without further engine redesign.
+
+## 18. Remaining Limitations
+
 
 - Only reference optimizers are implemented; the full algorithm zoo and race mode are
   intentionally out of scope.

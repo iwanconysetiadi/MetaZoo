@@ -14,6 +14,7 @@ const vertexShader = `
   varying float vBasinId;
   varying vec3 vWorldPosition;
   varying vec3 vNormal;
+  varying vec2 vUv;
 
   void main() {
     vCost = cost;
@@ -25,6 +26,7 @@ const vertexShader = `
     vec4 worldPos = modelMatrix * vec4(position, 1.0);
     vWorldPosition = worldPos.xyz;
     vNormal = normalize(mat3(modelMatrix) * normal);
+    vUv = uv;
 
     gl_Position = projectionMatrix * viewMatrix * worldPos;
   }
@@ -33,6 +35,7 @@ const vertexShader = `
 const fragmentShader = `
   uniform float uTime;
   uniform int uVisualizationMode;
+  uniform float uIslandMaskEnabled;
 
   uniform int uContourEnabled;
   uniform float uContourCount;
@@ -57,6 +60,7 @@ const fragmentShader = `
   varying float vBasinId;
   varying vec3 vWorldPosition;
   varying vec3 vNormal;
+  varying vec2 vUv;
 
   // ---- microdetail noise --------------------------------------------
   float hash(vec2 p) {
@@ -135,6 +139,17 @@ const fragmentShader = `
   }
 
   void main() {
+    // Natural view crops only the presentation mesh. Objective sampling remains rectangular internally.
+    if (uIslandMaskEnabled > 0.5) {
+      vec2 edgeUv = (vUv - 0.5) * 2.0;
+      float angle = atan(edgeUv.y, edgeUv.x);
+      float islandEdge = 0.965
+        + 0.035 * sin(angle * 3.0 + 0.45)
+        + 0.022 * sin(angle * 5.0 - 1.1)
+        + 0.012 * sin(angle * 9.0 + 0.8);
+      if (length(edgeUv) > islandEdge) discard;
+    }
+
     vec3 color = vec3(0.0);
     float alpha = 1.0;
 
@@ -233,6 +248,7 @@ export class TerrainMaterial extends THREE.ShaderMaterial {
   constructor() {
     const uniforms = {
       uTime: { value: 0 },
+      uIslandMaskEnabled: { value: 0 },
       uVerticalScale: { value: 1.0 },
       uHeightMapping: { value: 1 },
       uVisualizationMode: { value: 0 },

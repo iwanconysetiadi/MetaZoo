@@ -1,5 +1,5 @@
 import type {
-  CandidateState, Optimizer, OptimizerContext, OptimizerEvent,
+  CandidateState, Optimizer, OptimizerCapabilities, OptimizerContext, OptimizerEvent,
   OptimizerState, OptimizerStepResult,
 } from '../types';
 import { cloneVector, emptyStatistics } from '../types';
@@ -31,7 +31,7 @@ export class TestSwarmOptimizer implements Optimizer {
         fitness: result.value,
         bestPosition: cloneVector(position),
         bestFitness: result.value,
-        role: 'candidate',
+        role: { id: 'candidate' },
         active: true,
         metadata: { vx: 0, vy: 0 },
       };
@@ -120,6 +120,20 @@ export class TestSwarmOptimizer implements Optimizer {
 
   reset(context: OptimizerContext): void {
     this.initialize(context);
+  }
+
+  getCapabilities(): OptimizerCapabilities {
+    return {
+      population: true,
+      singleAgent: false,
+      constraints: true,
+      noisyObjective: true,
+      dynamicObjective: true,
+      variablePopulation: false,
+      roles: false,
+      events: true,
+      personalMemory: true,
+    };
   }
 
   private findBest(): CandidateState {

@@ -1,5 +1,5 @@
 import type {
-  CandidateState, Optimizer, OptimizerContext, OptimizerEvent,
+  CandidateState, Optimizer, OptimizerCapabilities, OptimizerContext, OptimizerEvent,
   OptimizerState, OptimizerStepResult,
 } from '../types';
 import { cloneVector, emptyStatistics } from '../types';
@@ -33,7 +33,7 @@ export class GradientDescentOptimizer implements Optimizer {
       fitness: result.value,
       bestPosition: cloneVector(position),
       bestFitness: result.value,
-      role: 'single-agent',
+      role: { id: 'single-agent' },
       active: true,
       metadata: { stepSize: 0 },
     };
@@ -115,6 +115,20 @@ export class GradientDescentOptimizer implements Optimizer {
 
   reset(context: OptimizerContext): void {
     this.initialize(context);
+  }
+
+  getCapabilities(): OptimizerCapabilities {
+    return {
+      population: false,
+      singleAgent: true,
+      constraints: true,
+      noisyObjective: true,
+      dynamicObjective: true,
+      variablePopulation: false,
+      roles: false,
+      events: true,
+      personalMemory: true,
+    };
   }
 
   private buildState(context: OptimizerContext): OptimizerState {

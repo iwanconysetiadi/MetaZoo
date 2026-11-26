@@ -6,6 +6,10 @@ export class WaterRenderer {
   private sceneManager: any;
   private waterPlane: THREE.Mesh | null = null;
   private visible = false;
+  private atmosphereValue = 0;
+  private atmosphereTarget = 0;
+  private readonly goldenWater = new THREE.Color(0x568f8b);
+  private readonly twilightWater = new THREE.Color(0x194e68);
 
   constructor(world: OptimizationWorld, sceneManager: any) {
     this.world = world;
@@ -47,7 +51,7 @@ export class WaterRenderer {
 
     const geometry = new THREE.PlaneGeometry(width * 1.1, depth * 1.1, 64, 64);
     const material = new THREE.MeshPhysicalMaterial({
-      color: 0x91bde9,
+      color: this.goldenWater,
       metalness: 0.0,
       roughness: 0.1,
       transmission: 0.8,
@@ -75,6 +79,11 @@ export class WaterRenderer {
   }
 
   update(deltaTime: number): void {
+    this.atmosphereValue += (this.atmosphereTarget - this.atmosphereValue) * (1 - Math.exp(-Math.max(0, deltaTime) / 0.9));
+    if (this.waterPlane) {
+      const material = this.waterPlane.material as THREE.MeshPhysicalMaterial;
+      material.color.lerpColors(this.goldenWater, this.twilightWater, this.atmosphereValue);
+    }
     if (!this.waterPlane) return;
     
     const t = Date.now() * 0.001;
@@ -88,6 +97,13 @@ export class WaterRenderer {
     }
     positions.needsUpdate = true;
     this.waterPlane.geometry.computeVertexNormals();
+  }
+
+  setAtmosphere(mode: 'golden-hour' | 'twilight'): void {
+    this.atmosphereTarget = mode === 'twilight' ? 1 : 0;
+    if (typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) {
+      this.atmosphereValue = this.atmosphereTarget;
+    }
   }
 
   dispose(): void {

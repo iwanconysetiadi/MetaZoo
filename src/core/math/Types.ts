@@ -145,7 +145,7 @@ export type NormalizationMode = 'linear' | 'log' | 'quantile' | 'clamped-percent
 export type ContourMode = 'linear' | 'log' | 'quantile';
 export type HeightMappingMode = 'raw' | 'linear' | 'log' | 'quantile' | 'clamped-percentile';
 export type VisualQuality = 'performance' | 'balanced' | 'presentation' | 'ultra';
-export type CameraPreset = 'orbit' | 'top-down' | 'valley-view' | 'minimum-focus' | 'saddle-focus' | 'cross-section' | 'cinematic' | 'overview';
+export type CameraPreset = 'orbit' | 'top-down' | 'valley-view' | 'low-flyover' | 'minimum-focus' | 'saddle-focus' | 'cross-section' | 'cinematic' | 'overview';
 export type CrossSectionMode = 'x' | 'z' | 'custom';
 
 export interface ResolutionLevel {

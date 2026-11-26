@@ -9,18 +9,18 @@ export interface FunctionView {
   verticalScale: number;
 }
 
-// Benchmark-specific framing. The world is a centered 100x100 domain; the
+// Benchmark-specific framing. The world is a centered 130x130 domain; the
 // optimisation domain is remapped into it, so positions are in world units.
 const FUNCTION_VIEWS: Record<string, FunctionView> = {
   sphere: { pos: [76, 54, 76], target: [0, 3, 0], fov: 50, verticalScale: 1.6 },
   ellipsoid: { pos: [76, 54, 76], target: [0, 3, 0], fov: 50, verticalScale: 1.6 },
   booth: { pos: [66, 50, 80], target: [5, 2, 12], fov: 50, verticalScale: 1.6 },
-  rastrigin: { pos: [96, 84, 96], target: [0, 4, 0], fov: 50, verticalScale: 1.15 },
+  rastrigin: { pos: [96, 60, 96], target: [0, 1, 0], fov: 50, verticalScale: 1.15 },
   ackley: { pos: [96, 70, 96], target: [0, 3, 0], fov: 50, verticalScale: 1.7 },
   rosenbrock: { pos: [26, 40, 98], target: [8, 6, 4], fov: 52, verticalScale: 2.4 },
-  himmelblau: { pos: [96, 90, 96], target: [0, 3, 0], fov: 52, verticalScale: 1.6 },
+  himmelblau: { pos: [96, 64, 96], target: [0, 1, 0], fov: 52, verticalScale: 1.6 },
   griewank: { pos: [92, 78, 92], target: [0, 3, 0], fov: 50, verticalScale: 1.5 },
-  schwefel: { pos: [96, 84, 96], target: [0, 3, 0], fov: 50, verticalScale: 1.1 },
+  schwefel: { pos: [96, 60, 96], target: [0, 1, 0], fov: 50, verticalScale: 1.1 },
   beale: { pos: [64, 50, 80], target: [6, 3, 6], fov: 52, verticalScale: 1.8 },
   matyas: { pos: [76, 54, 76], target: [0, 3, 0], fov: 50, verticalScale: 1.6 },
   easom: { pos: [66, 50, 78], target: [0, 3, 0], fov: 50, verticalScale: 1.4 },
@@ -47,7 +47,7 @@ export class CameraRig {
   private transitionEndPos: THREE.Vector3 = new THREE.Vector3();
   private transitionEndTarget: THREE.Vector3 = new THREE.Vector3();
 
-  private orbitRadius = 115;
+  private orbitRadius = 135;
   private orbitTheta = Math.PI / 4;
   private orbitPhi = Math.PI / 4;
   private minRadius = 12;
@@ -82,8 +82,11 @@ export class CameraRig {
   /** Apply a benchmark-specific view. Frees the orbit pivot at the target. */
   setFunctionPreset(id: string, animate: boolean = true): void {
     const view = CameraRig.getFunctionView(id);
-    const pos = new THREE.Vector3(view.pos[0], view.pos[1], view.pos[2]);
-    const target = new THREE.Vector3(view.target[0], view.target[1], view.target[2]);
+    const target = new THREE.Vector3(view.target[0], view.target[1], view.target[2]).multiplyScalar(1.2);
+    const pos = new THREE.Vector3(view.pos[0], view.pos[1], view.pos[2])
+      .sub(new THREE.Vector3(view.target[0], view.target[1], view.target[2]))
+      .multiplyScalar(1.2)
+      .add(target);
 
     this.camera.fov = view.fov;
     this.camera.updateProjectionMatrix();
@@ -133,7 +136,7 @@ export class CameraRig {
 
     switch (preset) {
       case 'overview': {
-        outPos.set(84, 66, 84);
+        outPos.set(101, 79, 101);
         outTarget.set(0, 4, 0);
         break;
       }
@@ -146,20 +149,25 @@ export class CameraRig {
         break;
       }
       case 'top-down': {
-        outPos.set(0, 150, 0.001);
+        outPos.set(0, 180, 0.001);
         outTarget.set(0, 0, 0);
         break;
       }
       case 'valley-view': {
-        outPos.set(-8, 58, 96);
+        outPos.set(-10, 70, 115);
         outTarget.set(0, 7, 0);
+        break;
+      }
+      case 'low-flyover': {
+        outPos.set(-5, 38, 134);
+        outTarget.set(0, -1, 0);
         break;
       }
       case 'minimum-focus': {
         if (primaryMin) {
           const { x, z } = this.world.optimizationToWorld(primaryMin.x1, primaryMin.x2);
           const y = this.world.getTerrainHeight(primaryMin.x1, primaryMin.x2);
-          outPos.set(x + 16, y + 18, z + 16);
+          outPos.set(x + 19, y + 22, z + 19);
           outTarget.set(x, y, z);
         } else {
           outPos.set(0, 30, 20);
@@ -173,7 +181,7 @@ export class CameraRig {
           const saddle = saddles[0];
           const { x, z } = this.world.optimizationToWorld(saddle.x1, saddle.x2);
           const y = this.world.getTerrainHeight(saddle.x1, saddle.x2);
-          outPos.set(x + 15, y + 20, z + 15);
+          outPos.set(x + 18, y + 24, z + 18);
           outTarget.set(x, y, z);
         } else {
           outPos.set(15, 20, 15);
@@ -187,12 +195,12 @@ export class CameraRig {
           if (csConfig.mode === 'x') {
             const x1 = config.domain.x1Min + (csConfig.position + 1) / 2 * (config.domain.x1Max - config.domain.x1Min);
             const { x, z } = this.world.optimizationToWorld(x1, config.domain.x2Min);
-            outPos.set(x, 50, z - 30);
+            outPos.set(x, 60, z - 36);
             outTarget.set(x, 0, z);
           } else if (csConfig.mode === 'z') {
             const x2 = config.domain.x2Min + (csConfig.position + 1) / 2 * (config.domain.x2Max - config.domain.x2Min);
             const { x, z } = this.world.optimizationToWorld(config.domain.x1Min, x2);
-            outPos.set(x - 30, 50, z);
+            outPos.set(x - 36, 60, z);
             outTarget.set(x, 0, z);
           }
         } else {
@@ -202,12 +210,12 @@ export class CameraRig {
         break;
       }
       case 'cinematic': {
-        outPos.set(100, 80, 100);
+        outPos.set(120, 96, 120);
         outTarget.set(0, 0, 0);
         break;
       }
       default: {
-        outPos.set(84, 66, 84);
+        outPos.set(101, 79, 101);
         outTarget.set(0, 4, 0);
       }
     }

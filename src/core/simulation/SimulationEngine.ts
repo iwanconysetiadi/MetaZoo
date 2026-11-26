@@ -2,7 +2,8 @@ import type { OptimizationWorld } from '../world/OptimizationWorld';
 import type {
   CandidateState, CompletionReason, InitialPopulation, Optimizer,
   OptimizerContext, OptimizerEvent, OptimizerState, RenderFrame,
-  RunConfiguration, SimulationSnapshot, SimulationStatus, OptimizerStepResult,
+  RunConfiguration, RunMetadata, SimulationSnapshot, SimulationStatus, OptimizerStepResult,
+  CompatibilityResult, CompatibilityLevel, Checkpoint, HeadlessRunResult, SimulationEngineEvent,
 } from './types';
 import {
   cloneOptimizerState, deepClone, snapshotToState,
@@ -16,6 +17,7 @@ import { Telemetry } from './Telemetry';
 import { computeStatistics } from './statistics';
 import { generateInitialPopulation } from './InitialPopulation';
 import { createOptimizer, getOptimizerDescriptor } from './optimizers/registry';
+import { EventBus } from './EventBus';
 
 export interface SimulationEngineCallbacks {
   onStateChange?: (engine: SimulationEngine) => void;
@@ -49,6 +51,8 @@ export class SimulationEngine {
   private completionReason: CompletionReason | null = null;
   private errorMessage: string | null = null;
   private failedIteration: number | null = null;
+  private compatibility: CompatibilityResult | null = null;
+  readonly eventBus = new EventBus<SimulationEngineEvent>();
   private boundRevision = -1;
 
   private renderAlpha = 1;
@@ -94,6 +98,10 @@ export class SimulationEngine {
 
     if (this.optimizer?.dispose) this.optimizer.dispose();
     this.optimizer = optimizer;
+    this.compatibility = this.checkCompatibility(optimizer, this.world);
+    if (this.compatibility.level === 'UNSUPPORTED') {
+      throw new Error(`Unsupported optimizer/world combination: ${this.compatibility.reasons.join('; ')}`);
+    }
     this.constraints = new ConstraintService(this.world);
     this.evaluation = new EvaluationService(
       this.world, this.constraints,
@@ -141,6 +149,7 @@ export class SimulationEngine {
     this.callbacks.onWorldTimeChanged?.(0);
     this.callbacks.onDisplaySnapshot?.(null);
     this.callbacks.onStateChange?.(this);
+    this.eventBus.publish('run-initialized', { iteration: 0 });
   }
 
   // ---------------------------------------------------------------- controls
@@ -483,6 +492,130 @@ export class SimulationEngine {
     return this.evaluation?.getCount() ?? 0;
   }
 
+  getCompatibility(): CompatibilityResult | null {
+    return this.compatibility;
+  }
+
+  getRunMetadata(): RunMetadata | null {
+    if (!this.config) return null;
+    return {
+      runId: this.config.runId,
+      worldId: this.config.worldId,
+      worldRevision: this.config.worldRevision,
+      optimizerId: this.config.optimizerId,
+      seed: this.config.seed,
+      populationSize: this.config.populationSize,
+      maxEvaluations: this.config.maxEvaluations,
+      maxIterations: this.config.maxIterations,
+      initialPopulationId: `pop-${this.config.seed}`,
+      boundaryPolicy: this.config.boundaryPolicy,
+      objectiveMode: this.config.objectiveMode,
+      logicalDelta: this.config.logicalDelta,
+      iterationsPerSecond: this.config.iterationsPerSecond,
+      targetFitness: this.config.targetFitness,
+      targetTolerance: this.config.targetTolerance,
+      optimizerParameters: deepClone(this.config.optimizerParameters),
+      createdAt: this.config.createdAt,
+    };
+  }
+
+  createCheckpoint(): Checkpoint | null {
+    if (!this.config || !this.state) return null;
+    return {
+      schemaVersion: 1,
+      iteration: this.clock.iteration,
+      evaluations: this.evaluation?.getCount() ?? 0,
+      simulationTime: this.clock.simulationTime,
+      optimizerId: this.config.optimizerId,
+      optimizerState: cloneOptimizerState(this.state),
+      randomState: this.random.getState(),
+      worldRevision: this.world.getRevision(),
+      worldSimTime: this.world.getSimTime(),
+      telemetry: deepClone(this.telemetry.getData()),
+      historySize: this.history.size,
+      createdAt: new Date().toISOString(),
+    };
+  }
+
+  resumeFromCheckpoint(checkpoint: Checkpoint): void {
+    if (checkpoint.schemaVersion !== 1) throw new Error('Unsupported checkpoint schema version');
+    if (!this.optimizer) throw new Error('Simulation not initialized');
+    if (checkpoint.optimizerId !== this.config?.optimizerId) throw new Error('Checkpoint optimizer mismatch');
+
+    this.random.setState(checkpoint.randomState);
+    this.state = cloneOptimizerState(checkpoint.optimizerState);
+    this.previousState = cloneOptimizerState(this.state);
+    this.clock.iteration = checkpoint.iteration;
+    this.clock.simulationTime = checkpoint.simulationTime;
+    this.evaluation?.setCount(checkpoint.evaluations);
+    this.world.setSimTime(checkpoint.worldSimTime);
+    this.status = 'PAUSED';
+    this.completionReason = null;
+    this.callbacks.onStateChange?.(this);
+  }
+
+  getStateHash(): string {
+    if (!this.state) return '';
+    return JSON.stringify(this.state);
+  }
+
+  static runHeadless(world: OptimizationWorld, setup: RunSetup): HeadlessRunResult {
+    const engine = new SimulationEngine(world);
+    engine.initialize(setup);
+    const maxSteps = setup.maxIterations ?? 500;
+    for (let i = 0; i < maxSteps + 5; i++) {
+      const status = engine.getStatus();
+      if (status === 'COMPLETED' || status === 'FAILED' || status === 'STALE') break;
+      engine.stepOnce();
+    }
+    const finalState = cloneOptimizerState(engine.getState()!);
+    const metadata = engine.getRunMetadata()!;
+    const telemetryData = deepClone(engine.getTelemetry().getData());
+    const completionReason = engine.getCompletionReason();
+    engine.dispose();
+    return {
+      finalState,
+      telemetry: telemetryData,
+      completionReason,
+      evaluations: finalState.evaluations,
+      iterations: finalState.iteration,
+      runMetadata: metadata,
+      stateHash: JSON.stringify(finalState),
+    };
+  }
+
+  private checkCompatibility(optimizer: Optimizer, world: OptimizationWorld): CompatibilityResult {
+    const capabilities = optimizer.getCapabilities?.() ?? {
+      population: true,
+      singleAgent: true,
+      constraints: true,
+      noisyObjective: true,
+      dynamicObjective: true,
+      variablePopulation: true,
+      roles: true,
+      events: true,
+      personalMemory: true,
+    };
+    const worldCapabilities = world.getCapabilities();
+    const reasons: string[] = [];
+    let level: CompatibilityLevel = 'SUPPORTED';
+
+    if (worldCapabilities.constrained && !capabilities.constraints) {
+      reasons.push('Optimizer does not declare constraint support.');
+      level = 'UNSUPPORTED';
+    }
+    if (worldCapabilities.noisy && !capabilities.noisyObjective) {
+      reasons.push('Optimizer does not declare noisy-objective support.');
+      if (level !== 'UNSUPPORTED') level = 'SUPPORTED_WITH_CAUTION';
+    }
+    if (worldCapabilities.dynamic && !capabilities.dynamicObjective) {
+      reasons.push('Optimizer does not declare dynamic-objective support.');
+      if (level !== 'UNSUPPORTED') level = 'SUPPORTED_WITH_CAUTION';
+    }
+    if (reasons.length === 0) reasons.push('Optimizer and world capabilities are compatible.');
+    return { level, reasons };
+  }
+
   getBoundRevision(): number {
     return this.boundRevision;
   }
@@ -644,6 +777,10 @@ export class SimulationEngine {
     this.completionReason = reason;
     this.clock.running = false;
     this.renderAlpha = 1;
+    this.eventBus.publish(reason === 'max-evaluations' ? 'budget-exhausted' : 'run-completed', {
+      iteration: this.clock.iteration,
+      data: { reason },
+    });
     this.callbacks.onStateChange?.(this);
   }
 
@@ -653,6 +790,10 @@ export class SimulationEngine {
     this.failedIteration = this.clock.iteration;
     this.clock.running = false;
     this.renderAlpha = 1;
+    this.eventBus.publish('candidate-invalid', {
+      iteration: this.clock.iteration,
+      data: { message },
+    });
     this.callbacks.onStateChange?.(this);
   }
 
@@ -668,6 +809,10 @@ export class SimulationEngine {
       this.errorMessage = 'World changed. This simulation is based on the previous world definition.';
       this.clock.running = false;
       this.renderAlpha = 1;
+      this.eventBus.publish('world-revision-changed', {
+        iteration: this.clock.iteration,
+        data: { revision: this.world.getRevision() },
+      });
       this.callbacks.onStateChange?.(this);
     }
     return true;

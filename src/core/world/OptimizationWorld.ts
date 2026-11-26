@@ -4,6 +4,7 @@ import '../benchmarks';
 import { CoordinateMapper } from './CoordinateMapper';
 import { LandscapeSampler } from './LandscapeSampler';
 import { WorldConfiguration, WorldSample, ProbeData, CriticalPoint, Vector2, NormalizationMode, ResolutionLevel, RESOLUTION_LEVELS, ViewMode } from '../math/Types';
+import type { WorldCapabilities } from '../simulation/types';
 
 export class OptimizationWorld {
   private currentFunction: CostFunction;
@@ -20,7 +21,9 @@ export class OptimizationWorld {
     }
     this.currentFunction = fn;
 
-    this.mapper = new CoordinateMapper(config, this.currentFunction, 100, 100, config.verticalScale);
+    // Give the floating landscape more room in the scene while keeping the
+    // optimization domain and all objective coordinates unchanged.
+    this.mapper = new CoordinateMapper(config, this.currentFunction, 130, 130, config.verticalScale);
     this.sampler = new LandscapeSampler(this.currentFunction, this.mapper, config.resolution);
     this.sampler.setNormalizationMode(config.normalizationMode);
   }
@@ -117,6 +120,25 @@ export class OptimizationWorld {
   getSimTime(): number {
     const fn = this.currentFunction as unknown as { getTime?: () => number };
     return fn.getTime ? fn.getTime() : 0;
+  }
+
+  getCapabilities(): WorldCapabilities {
+    const fn = this.currentFunction as unknown as {
+      isFeasible?: (a: number, b: number) => boolean;
+      constraintViolation?: (a: number, b: number) => number;
+      setTime?: (t: number) => void;
+    };
+    const constrained = typeof fn.isFeasible === 'function' || typeof fn.constraintViolation === 'function';
+    const dynamic = typeof fn.setTime === 'function';
+    const noisy = /noise|noisy/i.test(this.currentFunction.definition.id + ' ' + this.currentFunction.definition.name);
+    const knownGlobalOptimum = this.currentFunction.getGlobalMinima().length > 0;
+    return {
+      constrained,
+      noisy,
+      dynamic,
+      deterministic: true,
+      knownGlobalOptimum,
+    };
   }
 
   getDynamicCenter(): { x1: number; x2: number } | null {

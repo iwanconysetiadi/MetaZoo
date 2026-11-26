@@ -574,7 +574,7 @@ export class SimulationUI {
     if (candidate.bestFitness !== undefined) {
       this.inspectorRow('Personal best', numberText(candidate.bestFitness));
     }
-    if (candidate.role) this.inspectorRow('Role', candidate.role);
+    if (candidate.role) this.inspectorRow('Role', candidate.role.id);
     this.inspectorRow('Active', candidate.active ? 'yes' : 'no');
   }
 
@@ -796,10 +796,10 @@ export class SimulationUI {
     };
 
     drawSeries(data.meanFitness, 'rgba(39,124,152,0.48)', 1.5);
-    drawSeries(data.bestFitness, '#ef2f91', 2.5);
+    drawSeries(data.bestFitness, '#287d78', 2.5);
 
     const best = data.bestFitness[data.bestFitness.length - 1];
-    ctx.fillStyle = '#ef2f91';
+    ctx.fillStyle = '#287d78';
     ctx.beginPath();
     ctx.arc(xOf(iterationMax), yOf(best), 5, 0, Math.PI * 2);
     ctx.fill();

@@ -199,8 +199,7 @@ export class ControlPanel {
     const qualityOptions: Record<string, string> = {
       'Performance': 'performance',
       'Balanced': 'balanced',
-      'Presentation': 'presentation',
-      'Ultra': 'ultra',
+      'Cinematic': 'presentation',
     };
     folder.add(this.config, 'visualQuality', qualityOptions).name('Preset')
       .onChange((v: string) => { this.config.visualQuality = v as any; this.onConfigChange(this.config); });

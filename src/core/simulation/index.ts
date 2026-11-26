@@ -14,3 +14,8 @@ export { createOptimizer, listOptimizerDescriptors, getOptimizerDescriptor, OPTI
 export { RandomSearchOptimizer } from './optimizers/RandomSearch';
 export { GradientDescentOptimizer } from './optimizers/GradientDescent';
 export { TestSwarmOptimizer } from './optimizers/TestSwarm';
+export { exportTelemetryCsv, exportRunHistory, exportRunBundle } from './export';
+export type { EvaluationAuditEntry } from './EvaluationService';
+export { EventBus } from './EventBus';
+export { RunManager } from './RunManager';
+export { runBatch } from './batch';

@@ -155,6 +155,16 @@ describe('EvaluationService', () => {
     expect(evaluation.getCount()).toBe(2);
   });
 
+  it('records an optional evaluation audit', () => {
+    const world = makeWorld();
+    const evaluation = new EvaluationService(world, new ConstraintService(world));
+    evaluation.enableAudit(true);
+    evaluation.evaluate({ x: 0.5, y: -0.5 }, 'initialization');
+    expect(evaluation.getAuditLog()).toHaveLength(1);
+    expect(evaluation.getAuditLog()[0].source).toBe('initialization');
+    expect(evaluation.getAuditLog()[0].number).toBe(1);
+  });
+
   it('reports feasibility through the shared constraint service', () => {
     const world = makeWorld();
     loadChallenge(world, 'restricted-sanctuary');
@@ -296,6 +306,51 @@ describe('SimulationEngine', () => {
     engine.returnToLive();
     expect(engine.isViewingHistory()).toBe(false);
     expect(engine.getDisplayedState()?.iteration).toBe(5);
+  });
+
+  it('produces identical headless results for the same seed', () => {
+    const setup = {
+      optimizerId: 'random-search',
+      seed: 123,
+      populationSize: 8,
+      maxEvaluations: 1000,
+      maxIterations: 5,
+      boundaryPolicy: 'reflect' as const,
+    };
+    const a = SimulationEngine.runHeadless(makeWorld(), setup);
+    const b = SimulationEngine.runHeadless(makeWorld(), setup);
+    expect(a.stateHash).toBe(b.stateHash);
+    expect(a.evaluations).toBe(b.evaluations);
+    expect(a.iterations).toBe(b.iterations);
+    expect(a.completionReason).toBe(b.completionReason);
+    expect(a.telemetry.iteration).toEqual(b.telemetry.iteration);
+  });
+
+  it('resumes deterministically from a checkpoint', () => {
+    const a = makeEngine();
+    setupEngine(a, { maxIterations: 10 });
+    for (let i = 0; i < 5; i++) a.stepOnce();
+
+    const b = makeEngine();
+    setupEngine(b, { maxIterations: 10 });
+    for (let i = 0; i < 5; i++) b.stepOnce();
+    const checkpoint = b.createCheckpoint()!;
+    b.resumeFromCheckpoint(checkpoint);
+    for (let i = 5; i < 10; i++) b.stepOnce();
+    for (let i = 5; i < 10; i++) a.stepOnce();
+
+    expect(signature(a)).toBe(signature(b));
+    expect(a.getStateHash()).toBe(b.getStateHash());
+  });
+
+  it('exposes capability declarations', () => {
+    const optimizer = createOptimizer('random-search')!;
+    expect(optimizer.getCapabilities?.().population).toBe(true);
+    const world = makeWorld();
+    expect(world.getCapabilities().deterministic).toBe(true);
+    const engine = makeEngine();
+    setupEngine(engine);
+    expect(engine.getCompatibility()).toBeTruthy();
   });
 
   it('serializes the run configuration', () => {

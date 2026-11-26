@@ -29,6 +29,7 @@ export interface AppUICallbacks {
   onCameraPreset: (preset: string) => void;
   onResetCamera: () => void;
   onFocusOptimum: () => void;
+  onAtmosphereChange: (mode: 'golden-hour' | 'twilight') => void;
   onPresentationToggle: (on: boolean) => void;
   onProbeEnabledChange: (on: boolean) => void;
   onCrossSectionChange: (profile: CrossSectionProfile | null) => void;
@@ -45,13 +46,13 @@ interface Story {
 }
 
 const STORIES: Record<string, Story> = {
-  sphere: { subtitle: 'The Convex Bowl', equation: 'f(x₁, x₂) = x₁² + x₂²' },
+  sphere: { subtitle: 'The Convex Sanctuary', equation: 'f(x₁, x₂) = x₁² + x₂²' },
   ellipsoid: { subtitle: 'The Stretched Bowl', equation: 'f(x₁, x₂) = x₁² + 2x₂²' },
   booth: { subtitle: 'The Sloping Basin', equation: 'f = (x₁ + 2x₂ − 7)² + (2x₁ + x₂ − 5)²' },
-  rastrigin: { subtitle: 'The Field of Traps', equation: 'f = 20 + Σ [ xᵢ² − 10·cos(2π·xᵢ) ]' },
-  ackley: { subtitle: 'The Central Depression', equation: 'f = −20·e^(−0.2√(½Σxᵢ²)) − e^(½Σcos(2πxᵢ)) + 20 + e' },
-  rosenbrock: { subtitle: 'The Narrow Canyon', equation: 'f = (1 − x₁)² + 100·(x₂ − x₁²)²' },
-  himmelblau: { subtitle: 'The Four Valleys', equation: 'f = (x₁² + x₂ − 11)² + (x₁ + x₂² − 7)²' },
+  rastrigin: { subtitle: 'The Valley of Traps', equation: 'f = 20 + Σ [ xᵢ² − 10·cos(2π·xᵢ) ]' },
+  ackley: { subtitle: 'The Hollow Basin', equation: 'f = −20·e^(−0.2√(½Σxᵢ²)) − e^(½Σcos(2πxᵢ)) + 20 + e' },
+  rosenbrock: { subtitle: 'The Serpent Canyon', equation: 'f = (1 − x₁)² + 100·(x₂ − x₁²)²' },
+  himmelblau: { subtitle: 'The Four Sanctuaries', equation: 'f = (x₁² + x₂ − 11)² + (x₁ + x₂² − 7)²' },
   griewank: { subtitle: 'The Rippled Bowl', equation: 'f = 1 + Σxᵢ²/4000 − Π cos(xᵢ/√i)' },
   schwefel: { subtitle: 'The Deceptive Peaks', equation: 'f = 418.9829·n − Σ xᵢ·sin(√|xᵢ|)' },
   beale: { subtitle: 'The Steep Valleys', equation: 'f = Σ (cᵢ − x₁ + x₁·x₂ⁱ)²' },
@@ -108,6 +109,9 @@ export class AppUI {
   private activeTool: ToolName | null = null;
   private probeEnabled = true;
   private presentation = false;
+  private atmosphereMode: 'golden-hour' | 'twilight' = 'golden-hour';
+  private atmosphereButton!: HTMLButtonElement;
+  private atmosphereLabel!: HTMLElement;
   private mouseX = 0;
   private mouseY = 0;
 
@@ -169,16 +173,16 @@ export class AppUI {
     title.appendChild(nameRow);
     title.appendChild(this.fnStoryEl);
     title.appendChild(this.fnClassEl);
-    title.title = 'Open world selector';
+    title.title = 'Open Sky Atlas';
     title.addEventListener('click', () => this.openWorldModal());
     this.topBar.appendChild(title);
 
     const right = el('div', 'top-right');
 
-    const createBtn = el('button', 'btn primary', '＋ Create World');
-    createBtn.style.padding = '7px 12px';
-    createBtn.addEventListener('click', () => this.callbacks.onCreateWorld());
-    right.appendChild(createBtn);
+    const atlasBtn = el('button', 'btn', 'World Atlas');
+    atlasBtn.style.padding = '7px 12px';
+    atlasBtn.addEventListener('click', () => this.openWorldModal());
+    right.appendChild(atlasBtn);
 
     const seg = el('div', 'seg');
     for (const mode of ['natural', 'scientific', 'topographic'] as ViewMode[]) {
@@ -191,6 +195,22 @@ export class AppUI {
     right.appendChild(seg);
 
     right.appendChild(this.iconButton('ⓘ', 'Function details', () => this.openFunctionDrawer()));
+    this.atmosphereButton = el('button', 'atmosphere-toggle');
+    this.atmosphereButton.type = 'button';
+    this.atmosphereButton.appendChild(el('span', 'atmosphere-icon', '☼'));
+    this.atmosphereLabel = el('span', 'atmosphere-label', 'Golden Hour');
+    this.atmosphereButton.appendChild(this.atmosphereLabel);
+    this.atmosphereButton.setAttribute('aria-pressed', 'false');
+    this.atmosphereButton.title = 'Switch between Golden Hour and Twilight';
+    this.atmosphereButton.addEventListener('click', () => {
+      this.atmosphereMode = this.atmosphereMode === 'golden-hour' ? 'twilight' : 'golden-hour';
+      const twilight = this.atmosphereMode === 'twilight';
+      this.atmosphereButton.querySelector('.atmosphere-icon')!.textContent = twilight ? '☾' : '☼';
+      this.atmosphereLabel.textContent = twilight ? 'Twilight' : 'Golden Hour';
+      this.atmosphereButton.setAttribute('aria-pressed', String(twilight));
+      this.callbacks.onAtmosphereChange(this.atmosphereMode);
+    });
+    right.appendChild(this.atmosphereButton);
     right.appendChild(this.iconButton('⚙', 'Settings', () => this.toggleTool('settings')));
     right.appendChild(this.iconButton('◱', 'Presentation mode', () => this.togglePresentation()));
 
@@ -336,7 +356,10 @@ export class AppUI {
     headRow.style.display = 'flex';
     headRow.style.alignItems = 'center';
     headRow.style.justifyContent = 'space-between';
-    headRow.appendChild(el('h2', '', 'Select Optimization World'));
+    const atlasTitle = el('div', 'atlas-heading');
+    atlasTitle.appendChild(el('h2', '', 'Sky Atlas'));
+    atlasTitle.appendChild(el('p', '', 'Choose a mathematical world to explore.'));
+    headRow.appendChild(atlasTitle);
 
     const headButtons = el('div');
     headButtons.style.display = 'flex';
@@ -362,11 +385,16 @@ export class AppUI {
       const story = STORIES[def.id];
       const card = el('button', 'world-card');
       card.dataset.id = def.id;
+      card.classList.add('realm-card');
+
+      const art = el('div', 'realm-art');
+      art.dataset.world = def.id;
+      card.appendChild(art);
 
       const top = el('div', 'wc-top');
       const nameWrap = el('div');
-      nameWrap.appendChild(el('div', 'wc-name', def.shortName || def.name));
-      nameWrap.appendChild(el('div', 'wc-sub', story?.subtitle ?? 'Optimization Landscape'));
+      nameWrap.appendChild(el('div', 'realm-function', def.name));
+      nameWrap.appendChild(el('div', 'realm-title', story?.subtitle ?? 'Optimization World'));
       top.appendChild(nameWrap);
       top.appendChild(el('span', 'wc-badge', def.functionClass));
       card.appendChild(top);
@@ -375,9 +403,9 @@ export class AppUI {
 
       const meta = el('div', 'wc-meta');
       const g = def.knownGlobalMinima[0];
-      const optText = g ? `(${g.x1.toFixed(2)}, ${g.x2.toFixed(2)})` : '—';
+      const optText = g ? `(${g.x1.toFixed(2)}, ${g.x2.toFixed(2)}) · f* ${g.value.toFixed(3)}` : '—';
       meta.innerHTML =
-        `<div><b>Domain</b> [${def.domain.x1Min}, ${def.domain.x1Max}]²</div>` +
+        `<div><b>Domain</b> [${def.domain.x1Min}, ${def.domain.x1Max}] × [${def.domain.x2Min}, ${def.domain.x2Max}]</div>` +
         `<div><b>Optimum</b> ${optText}</div>`;
       card.appendChild(meta);
 
@@ -396,6 +424,10 @@ export class AppUI {
       const list = el('div', 'world-cards');
       for (const saved of savedFns) {
         const card = el('button', 'world-card');
+        card.classList.add('realm-card');
+        const art = el('div', 'realm-art');
+        art.dataset.world = 'custom';
+        card.appendChild(art);
         const top = el('div', 'wc-top');
         const nameWrap = el('div');
         nameWrap.appendChild(el('div', 'wc-name', saved.name));
@@ -420,6 +452,10 @@ export class AppUI {
       const list = el('div', 'world-cards');
       for (const ch of challenges) {
         const card = el('button', 'world-card');
+        card.classList.add('realm-card');
+        const art = el('div', 'realm-art');
+        art.dataset.world = 'challenge';
+        card.appendChild(art);
         const top = el('div', 'wc-top');
         const nameWrap = el('div');
         nameWrap.appendChild(el('div', 'wc-name', ch.name));
@@ -809,7 +845,7 @@ export class AppUI {
       canvas.style.height = '150px';
       canvas.style.margin = '0 8px 6px';
       canvas.style.borderRadius = '8px';
-    canvas.style.background = 'rgba(20,37,93,0.025)';
+    canvas.style.background = 'rgba(23,59,60,0.025)';
       canvas.style.cursor = 'crosshair';
       canvas.addEventListener('mousemove', (e) => {
         const rect = canvas.getBoundingClientRect();
@@ -876,8 +912,8 @@ export class AppUI {
 
     // filled area + curve
     const grad = ctx.createLinearGradient(0, padT, 0, padT + plotH);
-    grad.addColorStop(0, 'rgba(239,47,145,0.24)');
-    grad.addColorStop(1, 'rgba(239,47,145,0.015)');
+    grad.addColorStop(0, 'rgba(40,125,120,0.24)');
+    grad.addColorStop(1, 'rgba(40,125,120,0.015)');
     ctx.beginPath();
     ctx.moveTo(xOf(samples[0].t), yOf(samples[0].f));
     for (const s of samples) ctx.lineTo(xOf(s.t), yOf(s.f));
@@ -890,7 +926,7 @@ export class AppUI {
     ctx.beginPath();
     ctx.moveTo(xOf(samples[0].t), yOf(samples[0].f));
     for (const s of samples) ctx.lineTo(xOf(s.t), yOf(s.f));
-    ctx.strokeStyle = '#ef2f91';
+    ctx.strokeStyle = '#287d78';
     ctx.lineWidth = 2;
     ctx.stroke();
 
@@ -907,7 +943,7 @@ export class AppUI {
     const mn = samples[profile.minIndex];
     ctx.beginPath();
     ctx.arc(xOf(mn.t), yOf(mn.f), 4.5, 0, Math.PI * 2);
-    ctx.fillStyle = '#ef2f91';
+    ctx.fillStyle = '#287d78';
     ctx.fill();
 
     // axis labels

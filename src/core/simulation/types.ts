@@ -1,4 +1,5 @@
 import type { Vector2 } from '../math/Types';
+import type { TelemetryData } from './Telemetry';
 import type { OptimizationWorld } from '../world/OptimizationWorld';
 import type { SeededRandom } from './SeededRandom';
 import type { EvaluationService } from './EvaluationService';
@@ -22,6 +23,13 @@ export type CompletionReason =
   | 'manual-stop'
   | 'algorithm-termination';
 
+export interface CandidateRole {
+  id: string;
+  label?: string;
+  rank?: number;
+  metadata?: Record<string, unknown>;
+}
+
 export interface CandidateState {
   id: string;
   position: Vector2;
@@ -30,7 +38,7 @@ export interface CandidateState {
   previousFitness?: number;
   bestPosition?: Vector2;
   bestFitness?: number;
-  role?: string;
+  role?: CandidateRole;
   active: boolean;
   metadata?: Record<string, unknown>;
 }
@@ -116,6 +124,34 @@ export interface Optimizer {
   getState(): OptimizerState;
   reset(context: OptimizerContext): void;
   dispose?(): void;
+  getCapabilities?(): OptimizerCapabilities;
+}
+
+export interface OptimizerCapabilities {
+  population: boolean;
+  singleAgent: boolean;
+  constraints: boolean;
+  noisyObjective: boolean;
+  dynamicObjective: boolean;
+  variablePopulation: boolean;
+  roles: boolean;
+  events: boolean;
+  personalMemory: boolean;
+}
+
+export interface WorldCapabilities {
+  constrained: boolean;
+  noisy: boolean;
+  dynamic: boolean;
+  deterministic: boolean;
+  knownGlobalOptimum: boolean;
+}
+
+export type CompatibilityLevel = 'SUPPORTED' | 'SUPPORTED_WITH_CAUTION' | 'UNSUPPORTED';
+
+export interface CompatibilityResult {
+  level: CompatibilityLevel;
+  reasons: string[];
 }
 
 export interface OptimizerDescriptor {
@@ -125,6 +161,27 @@ export interface OptimizerDescriptor {
   populationBased: boolean;
   defaultPopulationSize: number;
   engineTest?: boolean;
+}
+
+export interface RunMetadata {
+  runId: string;
+  worldId: string;
+  worldRevision: number;
+  optimizerId: string;
+  optimizerVersion?: string;
+  seed: number;
+  populationSize?: number;
+  maxEvaluations?: number;
+  maxIterations?: number;
+  initialPopulationId?: string;
+  boundaryPolicy: BoundaryPolicy;
+  objectiveMode: ObjectiveMode;
+  logicalDelta: number;
+  iterationsPerSecond: number;
+  targetFitness?: number;
+  targetTolerance?: number;
+  optimizerParameters: Record<string, unknown>;
+  createdAt: string;
 }
 
 export interface RunConfiguration {
@@ -161,6 +218,39 @@ export interface RenderFrame {
   previous: OptimizerState | null;
   current: OptimizerState;
   alpha: number;
+}
+
+export interface SimulationEngineEvent {
+  type: 'run-initialized' | 'run-started' | 'run-paused' | 'run-resumed' | 'run-reset'
+    | 'run-completed' | 'budget-exhausted' | 'candidate-invalid'
+    | 'world-revision-changed' | 'checkpoint-created';
+  iteration: number;
+  data?: Record<string, unknown>;
+}
+
+export interface Checkpoint {
+  schemaVersion: number;
+  iteration: number;
+  evaluations: number;
+  simulationTime: number;
+  optimizerId: string;
+  optimizerState: OptimizerState;
+  randomState: number;
+  worldRevision: number;
+  worldSimTime: number;
+  telemetry: unknown;
+  historySize: number;
+  createdAt: string;
+}
+
+export interface HeadlessRunResult {
+  finalState: OptimizerState;
+  telemetry: TelemetryData;
+  completionReason: CompletionReason | null;
+  evaluations: number;
+  iterations: number;
+  runMetadata: RunMetadata;
+  stateHash: string;
 }
 
 export const DEFAULT_LOGICAL_DELTA = 0.2;
