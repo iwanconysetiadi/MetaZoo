@@ -1,0 +1,16 @@
+export { globalRegistry } from '../math/CostFunction';
+export * from '../math/Types';
+export * from './sphere';
+export * from './ellipsoid';
+export * from './rastrigin';
+export * from './ackley';
+export * from './rosenbrock';
+export * from './himmelblau';
+export * from './griewank';
+export * from './schwefel';
+export * from './booth';
+export * from './beale';
+export * from './matyas';
+export * from './easom';
+export * from './three-hump-camel';
+export * from './six-hump-camel';

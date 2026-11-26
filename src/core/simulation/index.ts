@@ -1,0 +1,16 @@
+export * from './types';
+export { SeededRandom } from './SeededRandom';
+export { ConstraintService } from './ConstraintService';
+export { EvaluationService, EvaluationBudgetExceededError } from './EvaluationService';
+export { SimulationClock } from './SimulationClock';
+export { SimulationHistory } from './SimulationHistory';
+export { Telemetry } from './Telemetry';
+export { SimulationEngine, createDefaultRunConfiguration } from './SimulationEngine';
+export type { SimulationEngineCallbacks, RunSetup } from './SimulationEngine';
+export { computeStatistics } from './statistics';
+export { generateInitialPopulation } from './InitialPopulation';
+export { applyBoundary, resolvePosition, sampleUniform, insideDomain } from './BoundaryPolicy';
+export { createOptimizer, listOptimizerDescriptors, getOptimizerDescriptor, OPTIMIZER_DESCRIPTORS } from './optimizers/registry';
+export { RandomSearchOptimizer } from './optimizers/RandomSearch';
+export { GradientDescentOptimizer } from './optimizers/GradientDescent';
+export { TestSwarmOptimizer } from './optimizers/TestSwarm';
