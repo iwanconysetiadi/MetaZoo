@@ -235,6 +235,10 @@ export class SimulationUI {
       form.boundaryPolicy = config.boundaryPolicy;
     }
 
+    const intro = el('div', 'sim-intro');
+    intro.appendChild(el('b', '', 'Watch search become a landscape journey'));
+    intro.appendChild(el('span', '', 'Choose a strategy, then track how each candidate explores the objective surface.'));
+    this.panelBody.appendChild(intro);
     this.panelBody.appendChild(el('div', 'sim-section-label', 'Optimizer'));
     const optimizerSelect = el('select', 'sim-select') as HTMLSelectElement;
     for (const descriptor of listOptimizerDescriptors()) {
@@ -275,7 +279,7 @@ export class SimulationUI {
     });
     this.panelBody.appendChild(grid);
 
-    const boundaryRow = el('div', 'sim-field-row');
+    const boundaryRow = el('div', 'sim-field-row sim-boundary-row');
     boundaryRow.appendChild(el('span', '', 'Boundary'));
     const boundary = el('select', 'sim-select small') as HTMLSelectElement;
     for (const [value, label] of [
@@ -291,8 +295,9 @@ export class SimulationUI {
     boundaryRow.appendChild(boundary);
     this.panelBody.appendChild(boundaryRow);
 
-    this.panelBody.appendChild(el('div', 'sim-note',
-      'Evaluation budget is strict. Initial population evaluations are counted.'));
+    const budgetNote = el('div', 'sim-note sim-budget-note');
+    budgetNote.textContent = 'Budget counts every objective evaluation, including the initial population.';
+    this.panelBody.appendChild(budgetNote);
 
     if (this.lastError) {
       this.panelBody.appendChild(el('div', 'sim-status err', this.lastError));
@@ -316,6 +321,11 @@ export class SimulationUI {
     status.appendChild(el('span', 'sim-run-sub', `seed ${config.seed} · ${config.boundaryPolicy}`));
     this.panelBody.appendChild(status);
 
+    const lesson = el('div', 'sim-intro');
+    lesson.appendChild(el('b', '', 'How to read this run'));
+    lesson.appendChild(el('span', '', 'Lower fitness is better. Every objective evaluation spends part of the run budget.'));
+    this.panelBody.appendChild(lesson);
+
     const controls = el('div', 'sim-control-row');
     const play = el('button', 'btn primary', '▶ PLAY');
     play.dataset.simAction = 'play';
@@ -330,7 +340,7 @@ export class SimulationUI {
     controls.appendChild(reset);
     this.panelBody.appendChild(controls);
 
-    const speedRow = el('div', 'sim-field-row');
+    const speedRow = el('div', 'sim-field-row sim-speed-row');
     speedRow.appendChild(el('span', '', 'Speed'));
     const speed = el('select', 'sim-select small') as HTMLSelectElement;
     for (const value of SPEEDS) {
@@ -419,6 +429,14 @@ export class SimulationUI {
     wrap.appendChild(el('span', 'k', label));
     const value = el('b', '', '—');
     value.id = id;
+    const explanations: Record<string, string> = {
+      Iteration: 'Logical optimizer steps completed.',
+      Evaluations: 'Objective calls used from the fixed run budget.',
+      Best: 'Lowest fitness found so far; lower is better.',
+      Diversity: 'Average distance between candidates. N/A for one candidate.',
+      Status: 'Current lifecycle state of this simulation.',
+    };
+    wrap.title = explanations[label] ?? label;
     wrap.appendChild(value);
     parent.appendChild(wrap);
   }
@@ -715,7 +733,7 @@ export class SimulationUI {
     ctx.clearRect(0, 0, W, H);
 
     if (data.iteration.length < 2) {
-      ctx.fillStyle = 'rgba(170,184,198,0.6)';
+      ctx.fillStyle = 'rgba(83,101,141,0.62)';
       ctx.font = '600 22px "JetBrains Mono", monospace';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
@@ -752,7 +770,7 @@ export class SimulationUI {
     const xOf = (iteration: number) => padL + ((iteration - iterationMin) / iterRange) * plotW;
     const yOf = (value: number) => padT + (1 - (transform(value) - tMin) / range) * plotH;
 
-    ctx.strokeStyle = 'rgba(255,255,255,0.07)';
+    ctx.strokeStyle = 'rgba(16,32,90,0.10)';
     ctx.lineWidth = 1;
     for (let g = 0; g <= 4; g++) {
       const y = padT + (g / 4) * plotH;
@@ -777,16 +795,16 @@ export class SimulationUI {
       ctx.stroke();
     };
 
-    drawSeries(data.meanFitness, 'rgba(111,199,214,0.45)', 1.5);
-    drawSeries(data.bestFitness, '#5fd6a0', 2.5);
+    drawSeries(data.meanFitness, 'rgba(39,124,152,0.48)', 1.5);
+    drawSeries(data.bestFitness, '#ef2f91', 2.5);
 
     const best = data.bestFitness[data.bestFitness.length - 1];
-    ctx.fillStyle = '#5fd6a0';
+    ctx.fillStyle = '#ef2f91';
     ctx.beginPath();
     ctx.arc(xOf(iterationMax), yOf(best), 5, 0, Math.PI * 2);
     ctx.fill();
 
-    ctx.fillStyle = 'rgba(170,184,198,0.85)';
+    ctx.fillStyle = 'rgba(83,101,141,0.88)';
     ctx.font = '600 18px "JetBrains Mono", monospace';
     ctx.textAlign = 'right';
     ctx.textBaseline = 'middle';

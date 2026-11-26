@@ -36,7 +36,7 @@ export class SceneManager {
     this.renderer.toneMappingExposure = 1.05;
 
     this.scene = new THREE.Scene();
-    this.scene.background = new THREE.Color(0x1c2632);
+    this.scene.background = new THREE.Color(0xf7f4f1);
 
     const aspect = canvas.clientWidth / canvas.clientHeight;
     this.camera = new THREE.PerspectiveCamera(50, aspect, 0.1, 2000);
@@ -98,7 +98,7 @@ export class SceneManager {
 
     this.addSkyDome();
 
-    this.scene.fog = new THREE.FogExp2(0x6f89a4, 0.0009);
+    this.scene.fog = new THREE.FogExp2(0xf4ece7, 0.0009);
   }
 
   private addSkyDome(): void {
@@ -108,9 +108,9 @@ export class SceneManager {
       depthWrite: false,
       fog: false,
       uniforms: {
-        uTop: { value: new THREE.Color(0x141d28) },
-        uHorizon: { value: new THREE.Color(0x728da8) },
-        uBottom: { value: new THREE.Color(0x0f1720) },
+        uTop: { value: new THREE.Color(0xf1f4fb) },
+        uHorizon: { value: new THREE.Color(0xf8eee9) },
+        uBottom: { value: new THREE.Color(0xf3eae5) },
       },
       vertexShader: `
         varying vec3 vWorld;
@@ -141,7 +141,7 @@ export class SceneManager {
   }
 
   private setupHelpers(): void {
-    this.gridHelper = new THREE.GridHelper(100, 50, 0x444466, 0x2a2a4a);
+    this.gridHelper = new THREE.GridHelper(100, 50, 0x8b98b3, 0xc4cad6);
     this.gridHelper.position.y = -5;
     this.gridHelper.visible = false;
     this.scene.add(this.gridHelper);
@@ -261,7 +261,7 @@ export class SceneManager {
   }
 
   setFogEnabled(enabled: boolean): void {
-    this.scene.fog = enabled ? new THREE.FogExp2(0x1a1a2e, 0.0015) : null;
+    this.scene.fog = enabled ? new THREE.FogExp2(0xf4ece7, 0.0015) : null;
   }
 
   setGridVisible(visible: boolean): void {

@@ -751,16 +751,15 @@ export class AppUI {
     const cp = this.world.getConfig().overlays.criticalPoints;
 
     body.appendChild(el('div', 'group-label', 'Critical Points'));
-    this.switchRow(body, 'Global minimum', true, () => {});
+    const reference = el('div', 'row analysis-reference');
+    reference.appendChild(el('span', 'grow', 'Global minimum'));
+    reference.appendChild(el('span', 'reference-state', 'Always shown'));
+    body.appendChild(reference);
     this.switchRow(body, 'Local minima', cp.localMinima, (v) => this.callbacks.onOverlayToggle('localMinima', v));
     this.switchRow(body, 'Local maxima', cp.localMaxima, (v) => this.callbacks.onOverlayToggle('localMaxima', v));
     this.switchRow(body, 'Saddle points', cp.saddlePoints, (v) => this.callbacks.onOverlayToggle('saddlePoints', v));
 
-    const legend = el('div', 'wc-meta');
-    legend.style.padding = '2px 8px 8px';
-    legend.style.display = 'flex';
-    legend.style.gap = '12px';
-    legend.style.flexWrap = 'wrap';
+    const legend = el('div', 'analysis-legend');
     legend.innerHTML =
       '<span><b style="color:var(--accent)">◎</b> Global</span>' +
       '<span><b style="color:var(--gold)">▽</b> Local min</span>' +
@@ -810,7 +809,7 @@ export class AppUI {
       canvas.style.height = '150px';
       canvas.style.margin = '0 8px 6px';
       canvas.style.borderRadius = '8px';
-      canvas.style.background = 'rgba(255,255,255,0.03)';
+    canvas.style.background = 'rgba(20,37,93,0.025)';
       canvas.style.cursor = 'crosshair';
       canvas.addEventListener('mousemove', (e) => {
         const rect = canvas.getBoundingClientRect();
@@ -868,7 +867,7 @@ export class AppUI {
     const yOf = (f: number) => padT + (1 - (f - minF) / range) * plotH;
 
     // gridlines
-    ctx.strokeStyle = 'rgba(255,255,255,0.06)';
+    ctx.strokeStyle = 'rgba(16,32,90,0.09)';
     ctx.lineWidth = 1;
     for (let g = 0; g <= 4; g++) {
       const y = padT + (g / 4) * plotH;
@@ -877,8 +876,8 @@ export class AppUI {
 
     // filled area + curve
     const grad = ctx.createLinearGradient(0, padT, 0, padT + plotH);
-    grad.addColorStop(0, 'rgba(95,214,160,0.28)');
-    grad.addColorStop(1, 'rgba(95,214,160,0.02)');
+    grad.addColorStop(0, 'rgba(239,47,145,0.24)');
+    grad.addColorStop(1, 'rgba(239,47,145,0.015)');
     ctx.beginPath();
     ctx.moveTo(xOf(samples[0].t), yOf(samples[0].f));
     for (const s of samples) ctx.lineTo(xOf(s.t), yOf(s.f));
@@ -891,7 +890,7 @@ export class AppUI {
     ctx.beginPath();
     ctx.moveTo(xOf(samples[0].t), yOf(samples[0].f));
     for (const s of samples) ctx.lineTo(xOf(s.t), yOf(s.f));
-    ctx.strokeStyle = '#5fd6a0';
+    ctx.strokeStyle = '#ef2f91';
     ctx.lineWidth = 2;
     ctx.stroke();
 
@@ -908,18 +907,18 @@ export class AppUI {
     const mn = samples[profile.minIndex];
     ctx.beginPath();
     ctx.arc(xOf(mn.t), yOf(mn.f), 4.5, 0, Math.PI * 2);
-    ctx.fillStyle = '#7ef0c4';
+    ctx.fillStyle = '#ef2f91';
     ctx.fill();
 
     // axis labels
-    ctx.fillStyle = 'rgba(170,184,198,0.85)';
+    ctx.fillStyle = 'rgba(83,101,141,0.9)';
     ctx.font = '600 15px "JetBrains Mono", monospace';
     ctx.textAlign = 'right';
     ctx.textBaseline = 'middle';
     ctx.fillText(maxF.toFixed(2), padL - 8, padT + 6);
     ctx.fillText(minF.toFixed(2), padL - 8, padT + plotH - 6);
     ctx.textAlign = 'left';
-    ctx.fillStyle = 'rgba(123,139,156,0.9)';
+    ctx.fillStyle = 'rgba(83,101,141,0.85)';
     ctx.font = '600 14px "JetBrains Mono", monospace';
     ctx.textBaseline = 'alphabetic';
     ctx.fillText(profile.startLabel, padL, H - 8);
@@ -933,17 +932,17 @@ export class AppUI {
       const idx = Math.round(this.crossHoverT * (samples.length - 1));
       const s = samples[idx];
       const hx = xOf(s.t), hy = yOf(s.f);
-      ctx.strokeStyle = 'rgba(111,199,214,0.7)';
+      ctx.strokeStyle = 'rgba(39,124,152,0.72)';
       ctx.lineWidth = 1;
       ctx.beginPath(); ctx.moveTo(hx, padT); ctx.lineTo(hx, padT + plotH); ctx.stroke();
       ctx.beginPath(); ctx.arc(hx, hy, 4, 0, Math.PI * 2);
-      ctx.fillStyle = '#6fc7d6'; ctx.fill();
+      ctx.fillStyle = '#277c98'; ctx.fill();
 
       const label = `f ${s.f.toFixed(3)}`;
       ctx.font = '600 14px "JetBrains Mono", monospace';
       const tw = ctx.measureText(label).width + 14;
       let tx = hx + 8; if (tx + tw > padL + plotW) tx = hx - tw - 8;
-      ctx.fillStyle = 'rgba(13,18,25,0.9)';
+      ctx.fillStyle = 'rgba(255,255,255,0.96)';
       ctx.fillRect(tx, padT + 4, tw, 22);
       ctx.fillStyle = '#dfe7ef';
       ctx.textAlign = 'left'; ctx.textBaseline = 'middle';

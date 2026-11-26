@@ -249,8 +249,8 @@ export class TerrainMaterial extends THREE.ShaderMaterial {
       uBasinColors: { value: null },
       uSunDir: { value: new THREE.Vector3(0.62, 0.52, 0.42).normalize() },
       uSunColor: { value: new THREE.Color(0xfff0d6) },
-      uSkyColor: { value: new THREE.Color(0x9fb8d6) },
-      uHorizonColor: { value: new THREE.Color(0x6b86a3) },
+      uSkyColor: { value: new THREE.Color(0xdce7f8) },
+      uHorizonColor: { value: new THREE.Color(0xf3e8e2) },
       uHazeDensity: { value: 0.0014 },
       uHazeStrength: { value: 0.30 },
     };

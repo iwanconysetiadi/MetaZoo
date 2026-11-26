@@ -47,12 +47,12 @@ export class WaterRenderer {
 
     const geometry = new THREE.PlaneGeometry(width * 1.1, depth * 1.1, 64, 64);
     const material = new THREE.MeshPhysicalMaterial({
-      color: 0x002244,
+      color: 0x91bde9,
       metalness: 0.0,
       roughness: 0.1,
       transmission: 0.8,
       transparent: true,
-      opacity: 0.4,
+      opacity: 0.32,
       side: THREE.DoubleSide,
       clearcoat: 1.0,
       clearcoatRoughness: 0.0,
