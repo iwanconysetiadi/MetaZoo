@@ -1,5 +1,6 @@
 import { WorldConfiguration } from '../math/Types';
 import { CostFunction } from '../math/CostFunction';
+import { squareToIsland, islandToSquare } from './IslandProjection';
 
 export class CoordinateMapper {
   private config: WorldConfiguration;
@@ -41,16 +42,15 @@ export class CoordinateMapper {
     const { x1Min, x1Max, x2Min, x2Max } = this.config.domain;
     const t1 = (x1 - x1Min) / (x1Max - x1Min);
     const t2 = (x2 - x2Min) / (x2Max - x2Min);
-    return {
-      x: (t1 - 0.5) * this.worldWidth,
-      z: (t2 - 0.5) * this.worldDepth,
-    };
+    const point = squareToIsland(t1 * 2 - 1, t2 * 2 - 1);
+    return { x: point.x * this.worldWidth * .5, z: point.z * this.worldDepth * .5 };
   }
 
   worldToOptimization(x: number, z: number): { x1: number; x2: number } {
     const { x1Min, x1Max, x2Min, x2Max } = this.config.domain;
-    const t1 = x / this.worldWidth + 0.5;
-    const t2 = z / this.worldDepth + 0.5;
+    const point = islandToSquare(x * 2 / this.worldWidth, z * 2 / this.worldDepth);
+    const t1 = point.s * .5 + .5;
+    const t2 = point.t * .5 + .5;
     return {
       x1: x1Min + t1 * (x1Max - x1Min),
       x2: x2Min + t2 * (x2Max - x2Min),

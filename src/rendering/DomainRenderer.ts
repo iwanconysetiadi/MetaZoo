@@ -9,6 +9,7 @@ export class DomainRenderer {
   private axisLines: THREE.Group;
   private axisLabels: THREE.Group;
   private visible = true;
+  private simulationActive = false;
   private mode: ViewMode = 'natural';
 
   private frameMaterial: THREE.LineBasicMaterial | null = null;
@@ -28,6 +29,11 @@ export class DomainRenderer {
     this.build();
   }
 
+  setSimulationActive(active: boolean): void {
+    if (this.simulationActive === active) return;
+    this.simulationActive = active; this.applyMode();
+  }
+
   setMode(mode: ViewMode): void {
     this.mode = mode;
     this.applyMode();
@@ -35,7 +41,7 @@ export class DomainRenderer {
 
   private applyMode(): void {
     const natural = this.mode === 'natural';
-    if (this.frameMaterial) this.frameMaterial.opacity = natural ? 0.0 : 0.5;
+    if (this.frameMaterial) this.frameMaterial.opacity = natural ? (this.simulationActive ? .42 : 0) : .5;
     this.axisLines.visible = this.visible && !natural;
     this.axisLabels.visible = this.visible && !natural;
     if (this.xAxisMaterial) this.xAxisMaterial.opacity = 0.5;
@@ -57,21 +63,23 @@ export class DomainRenderer {
     const y = -3;
 
     const boxGeometry = new THREE.BufferGeometry();
-    const boxPositions = new Float32Array(4 * 3);
-    for (let i = 0; i < 4; i++) {
-      boxPositions[i * 3] = corners[i].x;
-      boxPositions[i * 3 + 1] = y;
-      boxPositions[i * 3 + 2] = corners[i].z;
+    const boxPositions: number[] = [];
+    const domainCorners = [[x1Min,x2Min],[x1Max,x2Min],[x1Max,x2Max],[x1Min,x2Max]];
+    for (let side = 0; side < 4; side++) {
+      const from = domainCorners[side], to = domainCorners[(side+1)%4];
+      for (let step = 0; step < 80; step++) {
+        const t = step/80;
+        const a = THREE.MathUtils.lerp(from[0],to[0],t), b = THREE.MathUtils.lerp(from[1],to[1],t);
+        const point = this.world.projectAgentToTerrain(a,b,.20);
+        boxPositions.push(point.x,point.y,point.z);
+      }
     }
-    boxGeometry.setAttribute('position', new THREE.BufferAttribute(boxPositions, 3));
-
-    this.frameMaterial = new THREE.LineBasicMaterial({
-      color: 0xaec2d8,
-      transparent: true,
-      opacity: 0.14,
-      depthWrite: false,
-    });
-    this.domainBox.add(new THREE.LineLoop(boxGeometry, this.frameMaterial));
+    boxGeometry.setAttribute('position', new THREE.Float32BufferAttribute(boxPositions,3));
+    const frame = new THREE.LineDashedMaterial({color:0xa8c9dc,transparent:true,opacity:.42,depthWrite:false,dashSize:1.2,gapSize:1});
+    this.frameMaterial = frame;
+    const boundary = new THREE.LineLoop(boxGeometry,frame);
+    boundary.name = 'simulation-x1-x2-boundary'; boundary.computeLineDistances();
+    this.domainBox.add(boundary);
 
     this.createAxisLines(corners, y);
     this.createAxisLabels(corners, y);
@@ -79,19 +87,18 @@ export class DomainRenderer {
   }
 
   private createAxisLines(corners: Array<{ x: number; z: number }>, y: number): void {
-    const axisGeometry = new THREE.BufferGeometry();
-    const positions = new Float32Array(4 * 3);
-    positions[0] = corners[0].x; positions[1] = y; positions[2] = corners[0].z;
-    positions[3] = corners[1].x; positions[4] = y; positions[5] = corners[1].z;
-    positions[6] = corners[0].x; positions[7] = y; positions[8] = corners[0].z;
-    positions[9] = corners[3].x; positions[10] = y; positions[11] = corners[3].z;
-    axisGeometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-
-    this.xAxisMaterial = new THREE.LineBasicMaterial({ color: 0xd98a8a, opacity: 0.5, transparent: true, depthWrite: false });
-    this.zAxisMaterial = new THREE.LineBasicMaterial({ color: 0x7fc9ab, opacity: 0.5, transparent: true, depthWrite: false });
-
-    this.axisLines.add(new THREE.Line(axisGeometry, this.xAxisMaterial));
-    this.axisLines.add(new THREE.Line(axisGeometry.clone(), this.zAxisMaterial));
+    const config = this.world.getConfig();
+    const {x1Min,x1Max,x2Min,x2Max}=config.domain;
+    const xPoints: THREE.Vector3[] = [], zPoints: THREE.Vector3[] = [];
+    for(let i=0;i<=80;i++) {
+      const a=this.world.projectAgentToTerrain(THREE.MathUtils.lerp(x1Min,x1Max,i/80),x2Min,.24);
+      const b=this.world.projectAgentToTerrain(x1Min,THREE.MathUtils.lerp(x2Min,x2Max,i/80),.24);
+      xPoints.push(new THREE.Vector3(a.x,a.y,a.z));zPoints.push(new THREE.Vector3(b.x,b.y,b.z));
+    }
+    this.xAxisMaterial = new THREE.LineBasicMaterial({color:0xa8c9dc,opacity:.5,transparent:true,depthWrite:false});
+    this.zAxisMaterial = new THREE.LineBasicMaterial({color:0x78b8a4,opacity:.5,transparent:true,depthWrite:false});
+    this.axisLines.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(xPoints),this.xAxisMaterial));
+    this.axisLines.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(zPoints),this.zAxisMaterial));
   }
 
   private createAxisLabels(corners: Array<{ x: number; z: number }>, y: number): void {
@@ -108,6 +115,8 @@ export class DomainRenderer {
   }
 
   private createLabel(text: string, x: number, y: number, z: number, color: string = '#b9c6d4'): void {
+    const opt = this.world.worldToOptimization(x,z);
+    y = this.world.getTerrainSurfaceHeight(opt.x1,opt.x2) + 1.6;
     const canvas = document.createElement('canvas');
     canvas.width = 128;
     canvas.height = 64;
@@ -120,6 +129,7 @@ export class DomainRenderer {
     ctx.fillText(text, 64, 32);
 
     const texture = new THREE.CanvasTexture(canvas);
+    texture.colorSpace = THREE.SRGBColorSpace;
     const material = new THREE.SpriteMaterial({ map: texture, transparent: true, depthWrite: false, opacity: 0.85 });
     this.labelMaterials.push(material);
     const sprite = new THREE.Sprite(material);

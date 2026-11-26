@@ -1,3 +1,4 @@
+import { installUISystem, icon, buttonContent, registerDialog, brandLockup, anchorPanel } from './UISystem';
 import { OptimizationWorld } from '../core/world/OptimizationWorld';
 import {
   WorldConfiguration, ViewMode, NormalizationMode, ProbeData,
@@ -23,6 +24,7 @@ export interface AppUICallbacks {
   onViewModeChange: (mode: ViewMode) => void;
   onOverlayToggle: (key: OverlayToggleKey, value: boolean) => void;
   onContourCountChange: (count: number) => void;
+  onVisualQualityChange: (quality: WorldConfiguration['visualQuality']) => void;
   onResolutionChange: (res: number) => void;
   onVerticalScaleChange: (scale: number) => void;
   onNormalizationChange: (mode: NormalizationMode) => void;
@@ -105,9 +107,13 @@ export class AppUI {
   private pcF!: HTMLElement;
   private pcG!: HTMLElement;
   private pcSlope!: HTMLElement;
+  private pcCurvature!: HTMLElement;
+  private pcBasin!: HTMLElement;
 
   private activeTool: ToolName | null = null;
-  private probeEnabled = true;
+  private probeEnabled = false;
+  private pinnedProbeData: ProbeData[] = [];
+  private releasePanelAnchor?: () => void;
   private presentation = false;
   private atmosphereMode: 'golden-hour' | 'twilight' = 'golden-hour';
   private atmosphereButton!: HTMLButtonElement;
@@ -129,6 +135,9 @@ export class AppUI {
     this.viewButtons = new Map();
     this.dockButtons = new Map();
 
+    installUISystem();
+    document.addEventListener('keydown', e => { if (e.key === 'Escape' && !e.defaultPrevented && this.activeTool) { const trigger = this.activeTool === 'settings' ? this.topBar.querySelector<HTMLElement>('[aria-label=Settings]') : this.dockButtons.get(this.activeTool); this.closeTool(); trigger?.focus(); } });
+    document.addEventListener('metazoo:panel-open', e => { const source = (e as CustomEvent).detail; if (source !== 'tool') this.closeTool(); if (source !== 'atlas') this.closeWorldModal(); if (source !== 'info') this.closeFunctionDrawer(); });
     this.buildTopBar();
     this.buildDock();
     this.buildPanelHost();
@@ -148,22 +157,23 @@ export class AppUI {
     this.syncFromConfig();
     this.updateFunctionInfo();
     this.scheduleOnboarding();
+    this.callbacks.onProbeEnabledChange(this.probeEnabled);
   }
 
   // ============================================================= TOP BAR
   private buildTopBar(): void {
     this.topBar = el('div');
-    this.topBar.id = 'ui-top';
+    this.topBar.id = 'ui-top'; this.topBar.setAttribute('aria-label', 'World navigation');
 
-    const brand = el('div', 'brand');
-    brand.appendChild(el('div', 'mark', 'METAZOO'));
-    brand.appendChild(el('div', 'tag', 'Optimization World'));
-    this.topBar.appendChild(brand);
+    const brand = brandLockup();
+    const identity = el('div', 'world-identity'); identity.append(brand);
+    this.topBar.append(identity);
 
-    const title = el('div', 'fn-title');
+    const title = el('button', 'fn-title');
+    title.setAttribute('aria-label', 'Open Sky Atlas');
     const nameRow = el('div');
     this.fnNameEl = el('span', 'name', '—');
-    const chev = el('span', 'chev', '▾');
+    const chev = el('span', 'chev'); chev.append(icon('chevron'));
     nameRow.appendChild(this.fnNameEl);
     nameRow.appendChild(chev);
     nameRow.style.display = 'flex';
@@ -172,14 +182,15 @@ export class AppUI {
     this.fnClassEl = el('div', 'fn-class', '');
     title.appendChild(nameRow);
     title.appendChild(this.fnStoryEl);
-    title.appendChild(this.fnClassEl);
+    this.fnClassEl.hidden = true; // Classification is displayed in Function Profile.
     title.title = 'Open Sky Atlas';
     title.addEventListener('click', () => this.openWorldModal());
-    this.topBar.appendChild(title);
+    identity.append(title);
 
     const right = el('div', 'top-right');
 
     const atlasBtn = el('button', 'btn', 'World Atlas');
+    buttonContent(atlasBtn, 'atlas', 'World Atlas');
     atlasBtn.style.padding = '7px 12px';
     atlasBtn.addEventListener('click', () => this.openWorldModal());
     right.appendChild(atlasBtn);
@@ -197,7 +208,7 @@ export class AppUI {
     right.appendChild(this.iconButton('ⓘ', 'Function details', () => this.openFunctionDrawer()));
     this.atmosphereButton = el('button', 'atmosphere-toggle');
     this.atmosphereButton.type = 'button';
-    this.atmosphereButton.appendChild(el('span', 'atmosphere-icon', '☼'));
+    const atmosphereIcon = el('span', 'atmosphere-icon'); atmosphereIcon.append(icon('sun')); this.atmosphereButton.append(atmosphereIcon);
     this.atmosphereLabel = el('span', 'atmosphere-label', 'Golden Hour');
     this.atmosphereButton.appendChild(this.atmosphereLabel);
     this.atmosphereButton.setAttribute('aria-pressed', 'false');
@@ -205,7 +216,7 @@ export class AppUI {
     this.atmosphereButton.addEventListener('click', () => {
       this.atmosphereMode = this.atmosphereMode === 'golden-hour' ? 'twilight' : 'golden-hour';
       const twilight = this.atmosphereMode === 'twilight';
-      this.atmosphereButton.querySelector('.atmosphere-icon')!.textContent = twilight ? '☾' : '☼';
+      this.atmosphereButton.querySelector('.atmosphere-icon')!.replaceChildren(icon(twilight ? 'moon' : 'sun'));
       this.atmosphereLabel.textContent = twilight ? 'Twilight' : 'Golden Hour';
       this.atmosphereButton.setAttribute('aria-pressed', String(twilight));
       this.callbacks.onAtmosphereChange(this.atmosphereMode);
@@ -218,8 +229,9 @@ export class AppUI {
     document.body.appendChild(this.topBar);
   }
 
-  private iconButton(glyph: string, title: string, onClick: () => void): HTMLButtonElement {
-    const b = el('button', 'icon-btn', glyph);
+  private iconButton(_glyph: string, title: string, onClick: () => void): HTMLButtonElement {
+    const b = el('button', 'icon-btn');
+    buttonContent(b, title === 'Settings' ? 'settings' : title === 'Presentation mode' ? 'present' : 'info');
     b.title = title;
     b.setAttribute('aria-label', title);
     b.addEventListener('click', onClick);
@@ -240,10 +252,10 @@ export class AppUI {
     ];
     const groups = new Set<ToolName>(['layers', 'optimum']);
 
-    for (const [name, glyph, label] of tools) {
+    for (const [name, , label] of tools) {
       if (groups.has(name)) this.dock.appendChild(el('div', 'dock-divider'));
       const b = el('button', 'dock-btn');
-      b.appendChild(el('span', 'ico', glyph));
+      b.appendChild(icon(name));
       b.appendChild(el('span', 'lbl', label));
       b.dataset.tool = name;
       b.addEventListener('click', () => this.toggleTool(name));
@@ -289,7 +301,8 @@ export class AppUI {
     optWrap.appendChild(this.telOpt);
     this.telemetry.appendChild(optWrap);
 
-    document.body.appendChild(this.telemetry);
+    const bottom = el('div'); bottom.id = 'ui-bottom';
+    bottom.append(this.telemetry, this.dock); document.body.append(bottom);
   }
 
   private metric(parent: HTMLElement, key: string): HTMLElement {
@@ -312,6 +325,8 @@ export class AppUI {
     const sci = el('div', 'pc-sci');
     this.pcG = this.pcRow(sci, '|∇f|');
     this.pcSlope = this.pcRow(sci, 'slope');
+    this.pcCurvature = this.pcRow(sci, 'curvature');
+    this.pcBasin = this.pcRow(sci, 'basin');
     this.probeCard.appendChild(sci);
 
     this.pcF = el('div', 'pc-f', '—');
@@ -341,6 +356,20 @@ export class AppUI {
   }
 
   // ============================================================= WORLD MODAL
+  private contourPreview(def: ReturnType<typeof globalRegistry.getAllDefinitions>[number]): HTMLCanvasElement {
+    const canvas = el('canvas', 'atlas-contour') as HTMLCanvasElement; canvas.width = 480; canvas.height = 180; canvas.setAttribute('aria-hidden', 'true');
+    const ctx = canvas.getContext('2d'); if (!ctx) return canvas;
+    const n=40, values:number[]=[]; const d=def.domain;
+    for(let y=0;y<=n;y++) for(let x=0;x<=n;x++) { const v=def.evaluate(d.x1Min+x/n*(d.x1Max-d.x1Min),d.x2Min+y/n*(d.x2Max-d.x2Min)); values.push(Number.isFinite(v)?v:0); }
+    const sorted=[...values].sort((a,b)=>a-b); ctx.strokeStyle='rgba(154,196,180,.55)'; ctx.lineWidth=1;
+    for(let k=1;k<10;k++) { const level=sorted[Math.floor(k/10*(sorted.length-1))]; ctx.beginPath();
+      for(let y=0;y<n;y++)for(let x=0;x<n;x++) { const corners=[[x,y],[x+1,y],[x+1,y+1],[x,y+1]]; const points:number[][]=[];
+        for(let e=0;e<4;e++){const a=corners[e],b=corners[(e+1)%4],va=values[a[1]*(n+1)+a[0]],vb=values[b[1]*(n+1)+b[0]];if((va<level)!==(vb<level)){const t=(level-va)/(vb-va);points.push([(a[0]+t*(b[0]-a[0]))/n*480,(a[1]+t*(b[1]-a[1]))/n*180]);}}
+        for(let i=0;i+1<points.length;i+=2){ctx.moveTo(...points[i] as [number,number]);ctx.lineTo(...points[i+1] as [number,number]);}
+      } ctx.stroke();
+    } return canvas;
+  }
+
   private buildWorldModal(): void {
     this.worldModal = el('div');
     this.worldModal.id = 'ui-world-modal';
@@ -369,7 +398,9 @@ export class AppUI {
     const createBtn = el('button', 'btn primary', '＋ Create World');
     createBtn.addEventListener('click', () => { this.closeWorldModal(); this.callbacks.onCreateWorld(); });
     headButtons.appendChild(makeBtn);
+    buttonContent(makeBtn, 'settings', 'Make Challenge'); buttonContent(createBtn, 'plus', 'Create World');
     headButtons.appendChild(createBtn);
+    const closeAtlas = el('button', 'icon-btn'); buttonContent(closeAtlas, 'close'); closeAtlas.setAttribute('aria-label', 'Close Atlas'); closeAtlas.addEventListener('click', () => this.closeWorldModal()); headButtons.append(closeAtlas);
     headRow.appendChild(headButtons);
     inner.appendChild(headRow);
 
@@ -393,11 +424,12 @@ export class AppUI {
 
       const top = el('div', 'wc-top');
       const nameWrap = el('div');
-      nameWrap.appendChild(el('div', 'realm-function', def.name));
+      nameWrap.appendChild(el('div', 'realm-function', def.shortName || def.name));
       nameWrap.appendChild(el('div', 'realm-title', story?.subtitle ?? 'Optimization World'));
       top.appendChild(nameWrap);
       top.appendChild(el('span', 'wc-badge', def.functionClass));
-      card.appendChild(top);
+      card.prepend(top);
+      art.append(this.contourPreview(def));
 
       card.appendChild(el('div', 'wc-desc', def.metadata.description));
 
@@ -471,12 +503,30 @@ export class AppUI {
       scroll.appendChild(list);
     }
 
+    const tabs = el('div', 'atlas-tabs'); tabs.setAttribute('role', 'tablist'); tabs.setAttribute('aria-label', 'World collections');
+    const sections: HTMLElement[][] = [[], [], []]; let section = -1;
+    for (const child of Array.from(scroll.children) as HTMLElement[]) {
+      if (child.classList.contains('group-label')) section = child.textContent === 'My Worlds' ? 1 : child.textContent === 'Challenges' ? 2 : 0;
+      if (section >= 0) sections[section].push(child);
+    }
+    for (let i=1; i<3; i++) if (!sections[i].length) {
+      const empty = el('div', 'atlas-empty', i === 1 ? 'Your saved worlds will appear here. Create a world to begin.' : 'Your saved challenges will appear here. Make a challenge to begin.'); scroll.append(empty); sections[i].push(empty);
+    }
+    const activate = (index: number) => { sections.forEach((group, i) => group.forEach(node => node.hidden = i !== index)); Array.from(tabs.children).forEach((tab, i) => { tab.setAttribute('aria-selected', String(i === index)); (tab as HTMLElement).tabIndex = i === index ? 0 : -1; }); };
+    ['Built-In', 'My Worlds', 'Challenges'].forEach((name, index) => {
+      const tab = el('button', '', name); tab.setAttribute('role', 'tab'); tab.addEventListener('click', () => activate(index));
+      tab.addEventListener('keydown', event => { if (event.key === 'ArrowRight' || event.key === 'ArrowLeft') { event.preventDefault(); const next = (index + (event.key === 'ArrowRight' ? 1 : 2)) % 3; activate(next); (tabs.children[next] as HTMLElement).focus(); } }); tabs.append(tab);
+    });
+    activate(0); inner.append(tabs);
     inner.appendChild(scroll);
     this.worldModal.appendChild(inner);
     document.body.appendChild(this.worldModal);
+    this.worldModal.setAttribute('aria-label', 'Sky Atlas'); registerDialog(this.worldModal, () => this.closeWorldModal());
   }
 
   openWorldModal(): void {
+    document.dispatchEvent(new CustomEvent('metazoo:panel-open', { detail: 'atlas' }));
+    this.worldModal.remove(); this.buildWorldModal();
     this.closeFunctionDrawer();
     this.worldModal.classList.add('open');
     this.highlightActiveWorld();
@@ -489,7 +539,7 @@ export class AppUI {
   private highlightActiveWorld(): void {
     const active = this.world.getConfig().functionId;
     this.worldModal.querySelectorAll<HTMLElement>('.world-card').forEach(card => {
-      card.classList.toggle('active', card.dataset.id === active);
+      card.classList.toggle('active', card.dataset.id === active); card.setAttribute('aria-pressed', String(card.dataset.id === active));
     });
   }
 
@@ -498,9 +548,11 @@ export class AppUI {
     this.fnDrawer = el('div');
     this.fnDrawer.id = 'ui-fn-drawer';
     document.body.appendChild(this.fnDrawer);
+    this.fnDrawer.setAttribute('aria-label', 'Function profile'); registerDialog(this.fnDrawer, () => this.closeFunctionDrawer());
   }
 
   openFunctionDrawer(): void {
+    document.dispatchEvent(new CustomEvent('metazoo:panel-open', { detail: 'info' }));
     const def = this.world.getFunction().definition;
     const story = STORIES[def.id];
     const g = def.knownGlobalMinima[0];
@@ -553,6 +605,7 @@ export class AppUI {
       <div class="p-brand">METAZOO</div>
       <div class="p-meta"><b id="p-name">—</b> · <span id="p-view">Natural View</span></div>
       <div class="p-opt">Global optimum <b id="p-opt">—</b></div>`;
+    this.present.querySelector('.p-brand')?.replaceChildren(brandLockup());
     document.body.appendChild(this.present);
   }
 
@@ -612,6 +665,10 @@ export class AppUI {
   }
 
   private openTool(name: ToolName): void {
+    document.dispatchEvent(new CustomEvent('metazoo:panel-open', { detail: 'tool' }));
+    this.closeWorldModal(); this.closeFunctionDrawer();
+    if (name === 'probe') this.setProbeEnabled(true);
+    else if (this.activeTool === 'probe') this.setProbeEnabled(false);
     this.activeTool = name;
     this.panelHost.innerHTML = '';
 
@@ -627,31 +684,43 @@ export class AppUI {
     }
 
     this.panelHost.appendChild(panel);
+    if (name === 'probe') this.renderPinnedProbes();
     this.panelHost.classList.add('open');
     this.updateDockState();
+    this.releasePanelAnchor?.();
+    const trigger = name === 'settings' ? this.topBar.querySelector<HTMLElement>('[aria-label=Settings]') : this.dockButtons.get(name);
+    if (trigger) this.releasePanelAnchor = anchorPanel(this.panelHost, trigger);
   }
 
   closeTool(): void {
+    const trigger = this.activeTool === 'settings' ? this.topBar.querySelector<HTMLElement>('[aria-label=Settings]') : this.activeTool ? this.dockButtons.get(this.activeTool) : null;
+    const restoreFocus = this.panelHost.contains(document.activeElement);
+    this.releasePanelAnchor?.(); this.releasePanelAnchor = undefined;
+    if (this.activeTool === 'probe') this.setProbeEnabled(false);
     this.activeTool = null;
     this.panelHost.classList.remove('open');
     this.panelHost.innerHTML = '';
     this.updateDockState();
+    if (restoreFocus) trigger?.focus();
   }
 
   private updateDockState(): void {
     for (const [name, btn] of this.dockButtons) {
       btn.classList.toggle('active', name === this.activeTool);
+      btn.setAttribute('aria-expanded', String(name === this.activeTool));
     }
   }
 
   private panel(title: string): HTMLElement {
     const p = el('div', 'tool-panel');
-    p.appendChild(el('h4', '', title));
+    const header = el('h4', '', title);
+    const close = el('button', 'icon-btn'); buttonContent(close, 'close'); close.setAttribute('aria-label', 'Close panel');
+    close.addEventListener('click', () => this.closeTool()); header.append(close); p.append(header);
     return p;
   }
 
   private makeSwitch(on: boolean, onChange: (v: boolean) => void): HTMLElement {
-    const s = el('div', 'switch' + (on ? ' on' : ''));
+    const s = el('button', 'switch' + (on ? ' on' : ''));
     s.setAttribute('role', 'switch');
     s.setAttribute('aria-checked', String(on));
     s.addEventListener('click', () => {
@@ -666,17 +735,39 @@ export class AppUI {
   private switchRow(parent: HTMLElement, label: string, on: boolean, onChange: (v: boolean) => void): void {
     const row = el('div', 'row');
     row.appendChild(el('span', 'grow', label));
-    row.appendChild(this.makeSwitch(on, onChange));
+    const control = this.makeSwitch(on, onChange); control.setAttribute('aria-label', label); row.appendChild(control);
     parent.appendChild(row);
+  }
+
+  getProbeEnabled(): boolean { return this.probeEnabled; }
+
+  private setProbeEnabled(enabled: boolean): void {
+    this.probeEnabled = enabled; this.callbacks.onProbeEnabledChange(enabled);
+    if (!enabled) this.setProbe(null);
+  }
+
+  addPinnedProbe(data: ProbeData): void {
+    this.pinnedProbeData = [...this.pinnedProbeData.slice(-2), { ...data }];
+    this.renderPinnedProbes();
+  }
+
+  private renderPinnedProbes(): void {
+    const list = this.panelHost.querySelector<HTMLElement>('.probe-pins'); if (!list) return;
+    list.replaceChildren(el('div', 'group-label', 'Pinned readings'));
+    if (!this.pinnedProbeData.length) { list.append(el('p', 'ui-help', 'Click the terrain to keep a reading here.')); return; }
+    for (const data of [...this.pinnedProbeData].reverse()) {
+      const reading = el('div', 'probe-reading');
+      for (const [key, value] of [['x\u2081', data.x1.toFixed(4)], ['x\u2082', data.x2.toFixed(4)], ['f', data.cost.toFixed(4)]]) {
+        const field = el('div'); field.append(el('span', 'k', key), el('b', 'v', value)); reading.append(field);
+      } list.append(reading);
+    }
   }
 
   private renderProbePanel(): HTMLElement {
     const p = this.panel('Probe');
     const body = el('div', 'pbody');
     this.switchRow(body, 'Enable terrain probe', this.probeEnabled, (v) => {
-      this.probeEnabled = v;
-      this.callbacks.onProbeEnabledChange(v);
-      if (!v) this.setProbe(null);
+      this.setProbeEnabled(v);
     });
     const hint = el('div', 'row');
     hint.style.color = 'var(--muted)';
@@ -684,62 +775,34 @@ export class AppUI {
     hint.style.lineHeight = '1.5';
     hint.textContent = 'Hover the world to read objective values. Click to pin a probe.';
     body.appendChild(hint);
-    const focus = el('button', 'btn wide');
-    focus.textContent = 'Focus Global Optimum';
-    focus.style.width = '100%';
-    focus.style.marginTop = '8px';
-    focus.addEventListener('click', () => this.callbacks.onFocusOptimum());
-    body.appendChild(focus);
+    body.append(el('div', 'probe-pins'));
     p.appendChild(body);
     return p;
   }
 
   private renderCameraPanel(): HTMLElement {
-    const p = this.panel('Camera');
-    const body = el('div', 'pbody');
-
-    const primary = el('div', 'btn-grid');
-    const primaryPresets: Array<[string, string]> = [
-      ['overview', 'Overview'],
-      ['orbit', 'Orbit'],
-      ['top-down', 'Top'],
-      ['minimum-focus', 'Focus Optimum'],
-    ];
-    for (const [id, label] of primaryPresets) {
-      primary.appendChild(this.cameraButton(id, label));
-    }
-    body.appendChild(primary);
-
-    body.appendChild(el('div', 'group-label', 'Advanced'));
-    const adv = el('div', 'btn-grid');
-    adv.appendChild(this.cameraButton('valley-view', 'Valley View'));
-    adv.appendChild(this.cameraButton('cross-section', 'Cross Section'));
-    const cinematic = this.cameraButton('cinematic', 'Cinematic Survey');
-    cinematic.classList.add('wide');
-    adv.appendChild(cinematic);
-    body.appendChild(adv);
-
-    const reset = el('button', 'btn wide');
-    reset.textContent = 'Reset Camera';
-    reset.style.width = '100%';
-    reset.style.marginTop = '8px';
-    reset.addEventListener('click', () => this.callbacks.onResetCamera());
-    body.appendChild(reset);
-
-    p.appendChild(body);
-    return p;
+    const p = this.panel('Camera'); const body = el('div', 'pbody camera-controls');
+    const cinematic = this.cameraButton('cinematic', 'Cinematic survey'); cinematic.classList.add('btn', 'primary', 'camera-cinematic'); buttonContent(cinematic, 'camera', 'Cinematic survey'); body.append(cinematic);
+    body.append(el('div', 'group-label', 'Viewpoint'));
+    const primary = el('div', 'seg camera-viewpoints'); primary.setAttribute('role', 'group'); primary.setAttribute('aria-label', 'Camera viewpoint');
+    for (const [id, label] of [['overview', 'Overview'], ['orbit', 'Orbit'], ['top-down', 'Top']]) primary.append(this.cameraButton(id, label));
+    body.append(primary);
+    const focus = this.cameraButton('minimum-focus', 'Focus optimum'); focus.classList.add('btn', 'ghost', 'camera-focus'); buttonContent(focus, 'optimum', 'Focus optimum'); body.append(focus);
+    const advanced = el('details', 'ui-disclosure camera-advanced'); advanced.append(el('summary', '', 'More camera views'));
+    const options = el('div', 'camera-options');
+    for (const [id, label] of [['valley-view', 'Valley'], ['underside', 'Island underside'], ['cross-section', 'Cross section']]) options.append(this.cameraButton(id, label));
+    advanced.append(options); body.append(advanced);
+    const reset = el('button', 'btn ghost camera-reset'); buttonContent(reset, 'reset', 'Reset camera'); reset.addEventListener('click', () => this.callbacks.onResetCamera()); body.append(reset);
+    p.append(body); return p;
   }
 
   private cameraButton(id: string, label: string): HTMLButtonElement {
-    const b = el('button', 'btn', label);
-    b.dataset.preset = id;
-    if (this.world.getConfig().cameraPreset === id) b.classList.add('primary');
+    const selected = this.world.getConfig().cameraPreset === id;
+    const b = el('button', 'camera-preset' + (selected ? ' active' : ''), label); b.dataset.preset = id; b.setAttribute('aria-pressed', String(selected));
     b.addEventListener('click', () => {
-      this.panelHost.querySelectorAll('.btn[data-preset]').forEach(x => x.classList.remove('primary'));
-      b.classList.add('primary');
-      this.callbacks.onCameraPreset(id);
-    });
-    return b;
+      this.panelHost.querySelectorAll<HTMLElement>('[data-preset]').forEach(x => { x.classList.remove('active'); x.setAttribute('aria-pressed', 'false'); });
+      b.classList.add('active'); b.setAttribute('aria-pressed', 'true'); this.callbacks.onCameraPreset(id);
+    }); return b;
   }
 
   private renderLayersPanel(): HTMLElement {
@@ -1019,6 +1082,13 @@ export class AppUI {
     const body = el('div', 'pbody');
     const cfg = this.world.getConfig();
 
+    const advanced = el('details', 'ui-disclosure'); advanced.append(el('summary', '', 'Advanced settings'));
+    const qualityLabel = el('div', 'group-label', 'Visual quality'); body.append(qualityLabel);
+    const quality = el('div', 'seg ui-quality');
+    for (const [value, label] of [['performance', 'Performance'], ['balanced', 'Balanced'], ['presentation', 'Cinematic']] as const) {
+      const button = el('button', cfg.visualQuality === value ? 'active' : '', label); button.setAttribute('aria-pressed', String(cfg.visualQuality === value));
+      button.addEventListener('click', () => { this.callbacks.onVisualQualityChange(value); this.refreshOpenTool(); }); quality.append(button);
+    } body.append(quality);
     const resRow = el('div', 'row');
     resRow.appendChild(el('span', 'grow', 'Resolution'));
     const resSel = el('select', 'select') as HTMLSelectElement;
@@ -1032,7 +1102,7 @@ export class AppUI {
     resSel.value = String(cfg.resolution);
     resSel.addEventListener('change', () => this.callbacks.onResolutionChange(parseInt(resSel.value, 10)));
     resRow.appendChild(resSel);
-    body.appendChild(resRow);
+    advanced.appendChild(resRow);
 
     const normRow = el('div', 'row');
     normRow.appendChild(el('span', 'grow', 'Normalization'));
@@ -1046,13 +1116,13 @@ export class AppUI {
     normSel.value = cfg.normalizationMode;
     normSel.addEventListener('change', () => this.callbacks.onNormalizationChange(normSel.value as NormalizationMode));
     normRow.appendChild(normSel);
-    body.appendChild(normRow);
+    advanced.appendChild(normRow);
 
     const scaleRow = el('div', 'row');
     scaleRow.appendChild(el('span', 'grow', 'Vertical scale'));
     const scaleVal = el('span', 'mono', cfg.verticalScale.toFixed(1));
     scaleRow.appendChild(scaleVal);
-    body.appendChild(scaleRow);
+    advanced.appendChild(scaleRow);
     const scale = el('input') as HTMLInputElement;
     scale.type = 'range'; scale.min = '0.4'; scale.max = '2.6'; scale.step = '0.1';
     scale.value = String(cfg.verticalScale);
@@ -1061,7 +1131,9 @@ export class AppUI {
       scaleVal.textContent = parseFloat(scale.value).toFixed(1);
       this.callbacks.onVerticalScaleChange(parseFloat(scale.value));
     });
-    body.appendChild(scale);
+    advanced.appendChild(scale);
+    scale.setAttribute("aria-label", "Vertical scale"); body.append(advanced);
+    body.append(el("p", "ui-help", "Motion follows your system preference. Quality affects visual detail only."));
 
     p.appendChild(body);
     return p;
@@ -1073,7 +1145,7 @@ export class AppUI {
 
   // ============================================================= VIEW MODE
   private renderViewModeButtons(mode: ViewMode): void {
-    for (const [m, btn] of this.viewButtons) btn.classList.toggle('active', m === mode);
+    for (const [m, btn] of this.viewButtons) { btn.classList.toggle('active', m === mode); btn.setAttribute('aria-pressed', String(m === mode)); }
   }
 
   setViewMode(mode: ViewMode): void {
@@ -1095,6 +1167,8 @@ export class AppUI {
       this.pcF.textContent = `f = ${data.cost.toFixed(4)}`;
       this.pcG.textContent = data.gradientMagnitude.toFixed(2);
       this.pcSlope.textContent = data.slope.toFixed(3);
+      this.pcCurvature.textContent = data.curvature.toFixed(3);
+      this.pcBasin.textContent = data.basinId != null && data.basinId >= 0 ? `#${data.basinId}` : '—';
 
       this.positionProbeCard();
       this.probeCard.classList.add('show');
@@ -1109,9 +1183,13 @@ export class AppUI {
   }
 
   // ============================================================= INFO / SYNC
+  private lastFunctionId = "";
   updateFunctionInfo(): void {
     const def = this.world.getFunction().definition;
     const story = STORIES[def.id];
+    if (this.lastFunctionId && this.lastFunctionId !== def.id && !matchMedia('(prefers-reduced-motion: reduce)').matches) this.fnNameEl.parentElement?.parentElement?.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 220 });
+    if (this.lastFunctionId !== def.id) { this.pinnedProbeData = []; this.renderPinnedProbes(); }
+    this.lastFunctionId = def.id;
     this.fnNameEl.textContent = def.shortName || def.name;
     this.fnStoryEl.textContent = story?.subtitle ?? 'Optimization Landscape';
 
@@ -1137,7 +1215,7 @@ export class AppUI {
     const g = this.world.getGlobalMinima()[0];
     const est = def.referenceSource === 'estimated' ? 'est. ' : '';
     this.telOpt.textContent = g
-      ? `${est}f* ${g.value.toFixed(4)} @ (${g.x1.toFixed(2)}, ${g.x2.toFixed(2)})`
+      ? `${est}f* ${g.value.toFixed(4)}`
       : '—';
 
     this.updatePresentMeta();
@@ -1157,10 +1235,12 @@ export class AppUI {
   }
 
   dispose(): void {
+    this.releasePanelAnchor?.();
     this.topBar.remove();
     this.dock.remove();
     this.panelHost.remove();
     this.telemetry.remove();
+    document.getElementById("ui-bottom")?.remove();
     this.probeCard.remove();
     this.worldModal.remove();
     this.fnDrawer.remove();

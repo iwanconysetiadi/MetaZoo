@@ -1,4 +1,7 @@
 import * as THREE from 'three';
+import { VISUAL, ENVIRONMENT_QUALITY, applyVisualTokens } from './VisualTheme';
+import { CloudSystem } from './CloudSystem';
+import { islandEdgeRadius } from '../core/world/IslandProjection';
 import { OptimizationWorld } from '../core/world/OptimizationWorld';
 import { WorldConfiguration } from '../core/math/Types';
 
@@ -15,9 +18,12 @@ export class SceneManager {
   private overlayGroup: THREE.Group;
   private markerGroup: THREE.Group;
   private waterGroup: THREE.Group;
-  private cloudLayers: THREE.Mesh[] = [];
+  private cloudSystem!: CloudSystem;
+  private reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   private waterfallMeshes: THREE.Mesh[] = [];
-  private cloudBank: THREE.Group | null = null;
+  private waterDetails = new THREE.Group();
+  private mistTexture: THREE.CanvasTexture | null = null;
+
   private environmentTime = 0;
   private atmosphereValue = 0;
   private atmosphereTarget = 0;
@@ -25,18 +31,20 @@ export class SceneManager {
   private sunLight: THREE.DirectionalLight | null = null;
   private ambientLight: THREE.AmbientLight | null = null;
   private readonly atmospherePalette = {
-    topGolden: new THREE.Color(0x347c8c), topTwilight: new THREE.Color(0x172b53),
-    horizonGolden: new THREE.Color(0xf4a99e), horizonTwilight: new THREE.Color(0xed8b91),
-    bottomGolden: new THREE.Color(0x76627f), bottomTwilight: new THREE.Color(0x252b56),
-    fogGolden: new THREE.Color(0xe7b8ae), fogTwilight: new THREE.Color(0x263354),
-    sunGolden: new THREE.Color(0xffd7a3), sunTwilight: new THREE.Color(0xff9b91),
-    ambientGolden: new THREE.Color(0xffe6d6), ambientTwilight: new THREE.Color(0x8794c8),
+    topGolden: new THREE.Color(VISUAL.skyDeep), topTwilight: new THREE.Color('#26384f'),
+    midGolden: new THREE.Color(VISUAL.skyMid), midTwilight: new THREE.Color('#425a70'),
+    horizonGolden: new THREE.Color(VISUAL.horizon), horizonTwilight: new THREE.Color('#adb8be'),
+    bottomGolden: new THREE.Color(VISUAL.skyLight), bottomTwilight: new THREE.Color('#526a7a'),
+    fogGolden: new THREE.Color('#afc5d2'), fogTwilight: new THREE.Color('#748b9c'),
+    sunGolden: new THREE.Color('#ffd7a6'), sunTwilight: new THREE.Color('#e8be9c'),
+    ambientGolden: new THREE.Color('#aabcc4'), ambientTwilight: new THREE.Color('#8babc0'),
   };
 
   private gridHelper: THREE.GridHelper | null = null;
   private axesHelper: THREE.AxesHelper | null = null;
 
   constructor(canvas: HTMLCanvasElement, world: OptimizationWorld, config: WorldConfiguration) {
+    applyVisualTokens();
     this.world = world;
     this.config = config;
 
@@ -50,13 +58,14 @@ export class SceneManager {
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    this.renderer.toneMappingExposure = 1.05;
+    this.renderer.toneMappingExposure = 1.0;
+    this.renderer.outputColorSpace = THREE.SRGBColorSpace;
 
     this.scene = new THREE.Scene();
-    this.scene.background = new THREE.Color(0xf7f4f1);
+    this.scene.background = new THREE.Color(VISUAL.skyMid);
 
     const aspect = canvas.clientWidth / canvas.clientHeight;
-    this.camera = new THREE.PerspectiveCamera(50, aspect, 0.1, 2000);
+    this.camera = new THREE.PerspectiveCamera(43, aspect, 0.1, 2000);
     this.camera.position.set(80, 80, 80);
 
     this.terrainGroup = new THREE.Group();
@@ -80,13 +89,13 @@ export class SceneManager {
   }
 
   private setupLighting(): void {
-    const ambient = new THREE.AmbientLight(0xdfe8f5, 0.45);
+    const ambient = new THREE.AmbientLight(0xaabcc4, 0.20);
     this.ambientLight = ambient;
     this.scene.add(ambient);
 
-    const sun = new THREE.DirectionalLight(0xfff3e0, 1.25);
+    const sun = new THREE.DirectionalLight(0xffd7a6, 2.2);
     this.sunLight = sun;
-    sun.position.set(95, 105, 72);
+    sun.position.set(-110, 140, -90);
     sun.castShadow = true;
     sun.shadow.mapSize.width = 2048;
     sun.shadow.mapSize.height = 2048;
@@ -99,16 +108,19 @@ export class SceneManager {
     sun.shadow.bias = -0.0005;
     this.scene.add(sun);
 
+    this.scene.add(new THREE.HemisphereLight(0xb8d0dc, 0x3f4948, 1.1));
     const fillLight = new THREE.DirectionalLight(0x9fb8dd, 0.28);
     fillLight.position.set(-70, 90, -60);
     this.scene.add(fillLight);
+    const bounce = new THREE.DirectionalLight(0xc8dbe1,.65);
+    bounce.position.set(20,-100,50); this.scene.add(bounce);
   }
 
   private setupEnvironment(): void {
     const pmremGenerator = new THREE.PMREMGenerator(this.renderer);
     pmremGenerator.compileEquirectangularShader();
 
-    const skyColor = new THREE.Color(0x8eabb8);
+    const skyColor = new THREE.Color(VISUAL.skyMid);
     const skybox = new THREE.Scene();
     skybox.background = skyColor;
     const envMap = pmremGenerator.fromScene(skybox).texture;
@@ -116,11 +128,13 @@ export class SceneManager {
     pmremGenerator.dispose();
 
     this.addSkyDome();
-    this.addCloudOcean();
+    this.cloudSystem = new CloudSystem(this.config.visualQuality);
+    this.scene.add(this.cloudSystem.group);
+    this.scene.add(this.waterDetails);
     this.addWaterfalls();
     this.addDistantIslands();
 
-    this.scene.fog = new THREE.FogExp2(0xd9c2ce, 0.0007);
+    this.scene.fog = new THREE.FogExp2(0xafc5d2, 0.0018);
   }
 
   private addSkyDome(): void {
@@ -130,9 +144,10 @@ export class SceneManager {
       depthWrite: false,
       fog: false,
       uniforms: {
-        uTop: { value: new THREE.Color(0x347c8c) },
-        uHorizon: { value: new THREE.Color(0xf4a99e) },
-        uBottom: { value: new THREE.Color(0x76627f) },
+        uTop: { value: new THREE.Color(VISUAL.skyDeep) },
+        uMid: { value: new THREE.Color(VISUAL.skyMid) },
+        uHorizon: { value: new THREE.Color(VISUAL.horizon) },
+        uBottom: { value: new THREE.Color(VISUAL.skyLight) },
       },
       vertexShader: `
         varying vec3 vWorld;
@@ -144,15 +159,21 @@ export class SceneManager {
       `,
       fragmentShader: `
         uniform vec3 uTop;
+        uniform vec3 uMid;
         uniform vec3 uHorizon;
         uniform vec3 uBottom;
         varying vec3 vWorld;
         void main() {
           float h = normalize(vWorld).y;
           vec3 color = h > 0.0
-            ? mix(uHorizon, uTop, smoothstep(0.0, 0.55, h))
-            : mix(uHorizon, uBottom, smoothstep(0.0, 0.4, -h));
+            ? mix(uMid, uTop, .22 + .78 * smoothstep(0.0, .55, h))
+            : mix(uMid, uBottom, smoothstep(0.0, .65, -h));
+          float horizonBand = exp(-pow((h - .005) * 28.0, 2.0));
+          color = mix(color, uHorizon, horizonBand * .28);
+          color += vec3(.025,.014,.002) * horizonBand;
           gl_FragColor = vec4(color, 1.0);
+          #include <tonemapping_fragment>
+          #include <colorspace_fragment>
         }
       `,
     });
@@ -163,211 +184,127 @@ export class SceneManager {
     this.scene.add(sky);
   }
 
-  /** Decorative cloud field. It lives outside the terrain groups and never participates in picking or evaluation. */
-  private addCloudOcean(): void {
-    const reducedMotion = typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
-    const layers = this.config.visualQuality === 'performance'
-      ? [{ y: -31, size: 560, scale: 8, opacity: 0.82, offset: 0.17 }]
-      : [
-        { y: -30, size: 620, scale: 8, opacity: 0.88, offset: 0.17 },
-        { y: -43, size: 720, scale: 6, opacity: 0.58, offset: 0.63 },
-        ...(this.config.visualQuality === 'presentation' || this.config.visualQuality === 'ultra'
-          ? [{ y: -56, size: 820, scale: 5, opacity: 0.34, offset: 0.39 }]
-          : []),
-      ];
-
-    for (const layer of layers) {
-      const geometry = new THREE.PlaneGeometry(layer.size, layer.size, 1, 1);
-      const material = new THREE.ShaderMaterial({
-        transparent: true,
-        depthWrite: false,
-        side: THREE.DoubleSide,
-        uniforms: {
-          uTime: { value: 0 },
-          uScale: { value: layer.scale },
-          uOpacity: { value: layer.opacity },
-          uOffset: { value: layer.offset },
-          uDrift: { value: reducedMotion ? 0 : 1 },
-          uTwilight: { value: 0 },
-        },
-        vertexShader: `
-          varying vec2 vUv;
-          void main() {
-            vUv = uv;
-            gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-          }
-        `,
-        fragmentShader: `
-          uniform float uTime;
-          uniform float uScale;
-          uniform float uOpacity;
-          uniform float uOffset;
-          uniform float uDrift;
-          uniform float uTwilight;
-          varying vec2 vUv;
-          float hash(vec2 p) {
-            p = fract(p * vec2(123.34, 456.21));
-            p += dot(p, p + 45.32);
-            return fract(p.x * p.y);
-          }
-          float noise(vec2 p) {
-            vec2 i = floor(p);
-            vec2 f = fract(p);
-            vec2 u = f * f * (3.0 - 2.0 * f);
-            return mix(mix(hash(i), hash(i + vec2(1.0, 0.0)), u.x),
-              mix(hash(i + vec2(0.0, 1.0)), hash(i + vec2(1.0, 1.0)), u.x), u.y);
-          }
-          float fbm(vec2 p) {
-            float value = 0.0;
-            float amplitude = 0.5;
-            for (int i = 0; i < 4; i++) {
-              value += amplitude * noise(p);
-              p = p * 2.02 + 13.1;
-              amplitude *= 0.5;
-            }
-            return value;
-          }
-          void main() {
-            vec2 drift = vec2(uTime * 0.002, -uTime * 0.0013) * uDrift;
-            vec2 p = vUv * uScale + drift + uOffset;
-            float broad = fbm(p);
-            float detail = fbm(p * 2.7 + 7.0);
-            float fine = fbm(p * 5.4 - 3.0);
-            float body = smoothstep(0.39, 0.67, broad + detail * 0.16 + fine * 0.035);
-            float edge = smoothstep(0.02, 0.82, body);
-            float alpha = edge * uOpacity * 0.72;
-            float lightFacing = smoothstep(0.20, 0.82, body);
-            vec3 golden = mix(vec3(0.38, 0.60, 0.73), vec3(1.0, 0.88, 0.76), lightFacing);
-            golden = mix(golden, vec3(0.47, 0.76, 0.83), smoothstep(0.48, 0.84, broad) * 0.36);
-            vec3 twilight = mix(vec3(0.13, 0.22, 0.39), vec3(0.73, 0.39, 0.55), lightFacing);
-            vec3 cloud = mix(golden, twilight, uTwilight);
-            gl_FragColor = vec4(cloud, alpha);
-          }
-        `,
-      });
-      const cloud = new THREE.Mesh(geometry, material);
-      cloud.rotation.x = -Math.PI / 2;
-      cloud.position.y = layer.y;
-      cloud.renderOrder = 1;
-      cloud.userData.isEnvironment = true;
-      this.scene.add(cloud);
-      this.cloudLayers.push(cloud);
-    }
-
-    // Rounded, overlapping cloud puffs add a volumetric horizon around the island.
-    // Instancing keeps the detail inexpensive and entirely separate from terrain sampling.
-    const qualityCount = this.config.visualQuality === 'performance' ? 24
-      : this.config.visualQuality === 'balanced' ? 44 : 68;
-    const bank = new THREE.Group();
-    const puffGeometry = new THREE.SphereGeometry(1, 12, 8);
-    const puffMaterial = new THREE.MeshStandardMaterial({
-      color: 0xffffff,
-      roughness: 1,
-      metalness: 0,
-      vertexColors: true,
-    });
-    const puffs = new THREE.InstancedMesh(puffGeometry, puffMaterial, qualityCount);
-    const transform = new THREE.Object3D();
-    const blue = new THREE.Color(0x8ebbc4);
-    const blush = new THREE.Color(0xd7a4a0);
-    for (let i = 0; i < qualityCount; i++) {
-      const cluster = Math.floor(i / 5);
-      const withinCluster = i % 5;
-      const angle = (cluster / Math.ceil(qualityCount / 5)) * Math.PI * 2 + withinCluster * 0.075;
-      const radius = 75 + ((i * 17) % 41);
-      const puffSize = 8 + ((i * 13) % 8);
-      transform.position.set(
-        Math.cos(angle) * radius,
-        -9 + ((i * 7) % 5) * 0.45,
-        Math.sin(angle) * radius,
-      );
-      transform.scale.set(puffSize, puffSize * (0.36 + (i % 3) * 0.05), puffSize * (0.74 + (i % 4) * 0.08));
-      transform.rotation.set(0, angle, (i % 5 - 2) * 0.035);
-      transform.updateMatrix();
-      puffs.setMatrixAt(i, transform.matrix);
-      puffs.setColorAt(i, i % 4 === 0 ? blush : blue);
-    }
-    puffs.instanceMatrix.needsUpdate = true;
-    if (puffs.instanceColor) puffs.instanceColor.needsUpdate = true;
-    puffs.renderOrder = 0;
-    puffs.userData.isEnvironment = true;
-    bank.add(puffs);
-    bank.userData.isEnvironment = true;
-    this.scene.add(bank);
-    this.cloudBank = bank;
-  }
-
   /** A few low-detail background silhouettes establish scale without loading extra worlds. */
   private addDistantIslands(): void {
-    if (this.config.visualQuality === 'performance') return;
+
     const islands: Array<[number, number, number, number]> = [
-      [-155, 22, -170, 0.82], [172, 7, -125, 0.58], [-182, 13, 112, 0.7], [145, 28, 180, 0.48],
+      [-175, 30, -250, 2.2], [205, 18, -210, 1.55], [-285, 23, 50, 1.7], [60, 39, -340, 1.3], [40, 55, -300, 0.65],
     ];
-    for (const [x, y, z, scale] of islands) {
+    for (const [x, y, z, scale] of islands.slice(0, ENVIRONMENT_QUALITY[this.config.visualQuality].islands)) {
       const group = new THREE.Group();
       const top = new THREE.Mesh(
         new THREE.SphereGeometry(8 * scale, 12, 8),
-        new THREE.MeshStandardMaterial({ color: 0x9eaf9d, roughness: 1 }),
+        new THREE.MeshStandardMaterial({ color: 0x7d969e, roughness: 1 }),
       );
       top.scale.y = 0.28;
       top.position.y = 5 * scale;
       const underside = new THREE.Mesh(
-        new THREE.ConeGeometry(6.5 * scale, 13 * scale, 7, 1),
-        new THREE.MeshStandardMaterial({ color: 0x817c7d, roughness: 1, flatShading: true }),
+        new THREE.IcosahedronGeometry(6.5 * scale, 1),
+        new THREE.MeshStandardMaterial({ color: 0x697e88, roughness: 1, flatShading: true }),
       );
+      underside.scale.set(.9,1.55,.8); underside.rotation.set(.12,scale*.8,.14);
       underside.position.y = -1 * scale;
       group.add(top, underside);
-      group.position.set(x, y, z);
+      group.position.set(x * 1.38, y, z * 1.38);
       group.userData.isEnvironment = true;
       this.scene.add(group);
     }
   }
 
   /** Decorative cascades that run from the island rim into the cloud sea. */
+  rebuildWaterfalls(): void {
+    for (const mesh of this.waterfallMeshes) {
+      this.scene.remove(mesh); mesh.geometry.dispose(); (mesh.material as THREE.Material).dispose();
+    }
+    this.waterfallMeshes = [];
+    this.waterDetails.traverse(obj => {
+      if (obj instanceof THREE.Mesh) { obj.geometry.dispose(); (obj.material as THREE.Material).dispose(); }
+      if (obj instanceof THREE.Sprite) obj.material.dispose();
+    });
+    this.waterDetails.clear();
+    this.addWaterfalls();
+  }
+
   private addWaterfalls(): void {
     const config = this.world.getConfig();
     const { x1Min, x1Max, x2Min, x2Max } = config.domain;
+    const minimal = config.functionId === 'sphere' || config.visualQuality === 'performance';
     const cascades = [
-      { angle: 0.35, length: 30, width: 4.2 },
-      { angle: 1.62, length: 25, width: 3.3 },
-      { angle: 2.72, length: 34, width: 4.8 },
-      { angle: 4.20, length: 27, width: 3.5 },
-      { angle: 5.40, length: 32, width: 4.0 },
-    ];
-    const rows = 22;
+      { angle: .62, length: 130, width: 7.2 },
+      ...(!minimal ? [{ angle: 2.72, length: 137, width: 4.7 }] : []),
+    ].flatMap(cascade => [
+      {...cascade,angle:cascade.angle-.016,width:cascade.width*.43},
+      {...cascade,angle:cascade.angle+.008,width:cascade.width*.34},
+      {...cascade,angle:cascade.angle+.026,width:cascade.width*.23},
+    ]);
+    const rows = 44;
     const columns = 6;
+    const worldRadius = 90;
     const positions: number[] = [];
     const uvs: number[] = [];
+    const tangents: number[] = [];
+    const phases: number[] = [];
     const indices: number[] = [];
-    const edgeRadius = (angle: number): number => 0.965
-      + 0.035 * Math.sin(angle * 3 + 0.45)
-      + 0.022 * Math.sin(angle * 5 - 1.1)
-      + 0.012 * Math.sin(angle * 9 + 0.8);
 
-    for (const cascade of cascades) {
+    for (let cascadeIndex = 0; cascadeIndex < cascades.length; cascadeIndex++) {
+      const cascade = cascades[cascadeIndex];
       const { angle, length, width } = cascade;
-      const edge = edgeRadius(angle);
-      const u = 0.5 + Math.cos(angle) * edge * 0.5;
-      const v = 0.5 + Math.sin(angle) * edge * 0.5;
+      const edge = islandEdgeRadius(angle);
+      const squareEdge = 1 / Math.max(Math.abs(Math.cos(angle)), Math.abs(Math.sin(angle)));
+      const u = 0.5 + Math.sin(angle) * squareEdge * 0.5;
+      const v = 0.5 + Math.cos(angle) * squareEdge * 0.5;
       const x1 = x1Min + v * (x1Max - x1Min);
       const x2 = x2Min + u * (x2Max - x2Min);
-      const { x: rimX, z: rimZ } = this.world.optimizationToWorld(x1, x2);
-      const startY = this.world.sample(x1, x2).normalizedCost * config.verticalScale * 10 - 0.2;
+      const rimX = Math.cos(angle) * edge * worldRadius;
+      const rimZ = Math.sin(angle) * edge * worldRadius;
+      const startY = this.world.getTerrainSurfaceHeight(x1, x2) - 0.2;
+      if(cascadeIndex%3===0) {
+      const tangent = new THREE.Vector3(-Math.sin(angle),0,Math.cos(angle));
+      const wetMaterial = new THREE.MeshStandardMaterial({color:0x47595b,roughness:.62,flatShading:true});
+      for (const side of [-1,1]) {
+        const wet = new THREE.Mesh(new THREE.IcosahedronGeometry(1,1),wetMaterial.clone());
+        wet.position.set(rimX + tangent.x * width * side * .62,startY-.6,rimZ+tangent.z*width*side*.62);
+        wet.scale.set(2.4,1.2,2.4); this.waterDetails.add(wet);
+      }
+      wetMaterial.dispose();
+      // A short stone spillway and dark water connect the lip to its source.
+      const lip = new THREE.Mesh(new THREE.BoxGeometry(5.5,.55,width*.8),new THREE.MeshStandardMaterial({color:0x315c5a,roughness:.32,transparent:true,opacity:.62}));
+      lip.position.set(rimX-Math.cos(angle)*2.4,startY+.10,rimZ-Math.sin(angle)*2.4);
+      lip.rotation.y=-angle;this.waterDetails.add(lip);
+      if (!this.mistTexture) {
+        const canvas=document.createElement('canvas');canvas.width=64;canvas.height=64;
+        const ctx=canvas.getContext('2d')!;const grad=ctx.createRadialGradient(32,32,0,32,32,32);
+        grad.addColorStop(0,'rgba(244,247,243,.7)');grad.addColorStop(.35,'rgba(219,233,236,.25)');grad.addColorStop(1,'rgba(219,233,236,0)');
+        ctx.fillStyle=grad;ctx.fillRect(0,0,64,64);this.mistTexture=new THREE.CanvasTexture(canvas);this.mistTexture.colorSpace=THREE.SRGBColorSpace;
+      }
+      const mistCount=config.visualQuality==='performance'?2:4;
+      for(let i=0;i<mistCount;i++) {
+        const mist=new THREE.Sprite(new THREE.SpriteMaterial({map:this.mistTexture,transparent:true,opacity:.28,depthWrite:false,color:0xd7e1e5}));
+        mist.position.set(rimX+tangent.x*(i-1.5)*2.1,-108-i*5,rimZ+tangent.z*(i-1.5)*2.1);
+        mist.scale.set(9+i*3,14+i*3,1);mist.userData.baseY=mist.position.y;mist.userData.phase=i*1.7;
+        this.waterDetails.add(mist);
+      }
+      }
       const base = positions.length / 3;
 
       for (let row = 0; row <= rows; row++) {
         const t = row / rows;
-        const fallY = THREE.MathUtils.lerp(startY, -30, t);
-        const radius = edge + 0.018 + Math.sin(t * Math.PI) * 0.018;
-        const flowWobble = Math.sin(t * 12 + angle * 3) * 0.65 + Math.sin(t * 23 - angle) * 0.28;
+        const phase = cascadeIndex * 1.71;
+        const centerAngle = angle + Math.sin(t * 4.2 + phase) * .004 * t + Math.sin(t * 10.5 - phase) * .002 * t;
+        const fallY = THREE.MathUtils.lerp(startY, -length, t) + Math.sin(t * 5.5 + phase) * 0.42 * t;
+        const radius = edge + .004 + (1 - Math.exp(-t * 8)) * .028;
+        const flowWobble = Math.sin(t * 12 + phase) * 0.72 + Math.sin(t * 23 - phase) * 0.24;
+        const widthProfile = 1.0 - t * .30 + Math.sin(t * 8 + phase) * .025;
         for (let column = 0; column <= columns; column++) {
           const side = column / columns - 0.5;
-          const a = angle + side * width / 65;
-          const localRadius = radius + flowWobble / 100;
-          const px = Math.cos(a) * localRadius * 50;
-          const pz = Math.sin(a) * localRadius * 50;
-          positions.push(rimX + px - Math.cos(angle) * edge * 50, fallY, rimZ + pz - Math.sin(angle) * edge * 50);
+          const a = centerAngle + side * width * widthProfile / worldRadius;
+          const localRadius = radius + flowWobble * t / 400;
+          const px = Math.cos(a) * localRadius * worldRadius;
+          const pz = Math.sin(a) * localRadius * worldRadius;
+          positions.push(rimX + px - Math.cos(angle) * edge * worldRadius, fallY + Math.sin(column * 2.1 + phase) * 0.12, rimZ + pz - Math.sin(angle) * edge * worldRadius);
           uvs.push(column / columns, t);
+          tangents.push(-Math.sin(centerAngle), 0, Math.cos(centerAngle));
+          phases.push(phase);
         }
       }
 
@@ -385,6 +322,8 @@ export class SceneManager {
     const geometry = new THREE.BufferGeometry();
     geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
     geometry.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
+    geometry.setAttribute('aTangent', new THREE.Float32BufferAttribute(tangents, 3));
+    geometry.setAttribute('aPhase', new THREE.Float32BufferAttribute(phases, 1));
     geometry.setIndex(indices);
     geometry.computeVertexNormals();
     const material = new THREE.ShaderMaterial({
@@ -393,28 +332,54 @@ export class SceneManager {
       side: THREE.DoubleSide,
       uniforms: {
         uTime: { value: 0 },
-        uWater: { value: new THREE.Color('#a8e5e8') },
-        uFoam: { value: new THREE.Color('#f3f8ef') },
+        uTwilight: { value: 0 },
+        uWater: { value: new THREE.Color('#bfdce0') },
+        uShadow: { value: new THREE.Color('#7ea6b2') },
+        uFoam: { value: new THREE.Color('#e9f4f2') },
       },
       vertexShader: `
+        attribute vec3 aTangent;
+        attribute float aPhase;
+        uniform float uTime;
         varying vec2 vUv;
+        varying float vPhase;
         void main() {
           vUv = uv;
-          gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+          float sway = sin(uv.y * 7.2 - uTime * 1.55 + aPhase) * 0.72
+            + sin(uv.y * 15.0 - uTime * 2.1 + aPhase * 1.7) * 0.24;
+          vec3 p = position + aTangent * sway * uv.y * .2;
+          gl_Position = projectionMatrix * modelViewMatrix * vec4(p, 1.0);
+          vPhase = aPhase;
         }
       `,
       fragmentShader: `
         uniform float uTime;
         uniform vec3 uWater;
+        uniform float uTwilight;
+        uniform vec3 uShadow;
         uniform vec3 uFoam;
         varying vec2 vUv;
+        varying float vPhase;
         void main() {
-          float edge = smoothstep(0.0, 0.14, vUv.x) * (1.0 - smoothstep(0.86, 1.0, vUv.x));
-          float fade = 1.0 - smoothstep(0.90, 1.0, vUv.y);
-          float streak = pow(0.5 + 0.5 * sin(vUv.y * 76.0 - uTime * 5.0 + sin(vUv.x * 18.0) * 2.2), 5.0);
-          float foam = smoothstep(0.77, 0.98, streak) * 0.38;
-          vec3 color = mix(uWater, uFoam, foam);
-          gl_FragColor = vec4(color, edge * fade * (0.40 + streak * 0.24));
+          float across = abs(vUv.x * 2.0 - 1.0);
+          float brokenEdge = 0.80 + 0.11 * sin(vUv.y * 11.0 - uTime * 0.7 + vPhase)
+            + 0.06 * sin(vUv.y * 23.0 + vPhase * 1.9);
+          float edge = 1.0 - smoothstep(brokenEdge - 0.10, brokenEdge + 0.035, across);
+          float flow = vUv.y * 65.0 - uTime * 5.4 + sin(vUv.x * 38.0 + vPhase) * .6;
+          float streak = pow(0.5 + 0.5 * sin(flow), 7.0);
+          float ripple = pow(0.5 + 0.5 * sin(flow * 0.43 + vPhase), 12.0);
+          float fadeIn = smoothstep(0.0, 0.035, vUv.y);
+          float fadeOut = 1.0 - smoothstep(0.80, 1.0, vUv.y);
+          float foam = clamp(streak * 0.52 + ripple * 0.42, 0.0, 0.7);
+          float depth = 0.12 + 0.14 * sin(vUv.x * 7.0 + vUv.y * 5.0 + vPhase);
+          vec3 color = mix(uWater, uShadow, depth);
+          color = mix(color, uFoam, foam);
+          color = mix(color,mix(vec3(.47,.59,.69),vec3(.69,.78,.83),foam),uTwilight*.5);
+          float strands = pow(.5 + .5 * sin(vUv.x * 33.0 + sin(vUv.y * 7.0 - uTime) * .6), 3.0);
+          float alpha = edge * fadeIn * fadeOut * (.10 + streak * .24 + strands * .44) * (1.0 - vUv.y * .5);
+          gl_FragColor = vec4(color, alpha);
+          #include <tonemapping_fragment>
+          #include <colorspace_fragment>
         }
       `,
     });
@@ -425,6 +390,7 @@ export class SceneManager {
     waterfalls.userData.isEnvironment = true;
     this.scene.add(waterfalls);
     this.waterfallMeshes.push(waterfalls);
+    this.waterDetails.traverse(obj => { obj.userData.semanticLayer='ISLAND_DECORATION'; obj.userData.isEnvironment=true; });
   }
 
   private setupHelpers(): void {
@@ -440,20 +406,15 @@ export class SceneManager {
   }
 
   private applyQualityPreset(quality: WorldConfiguration['visualQuality']): void {
-    const presets = {
-      performance: { shadowMapSize: 512, pixelRatio: 1, ssao: false, bloom: false, fxaa: true },
-      balanced: { shadowMapSize: 1024, pixelRatio: 1.5, ssao: false, bloom: false, fxaa: true },
-      presentation: { shadowMapSize: 2048, pixelRatio: 2, ssao: true, bloom: true, fxaa: true },
-      ultra: { shadowMapSize: 4096, pixelRatio: 2, ssao: true, bloom: true, fxaa: true },
-    };
-
-    const preset = presets[quality];
-    this.renderer.setPixelRatio(Math.min(preset.pixelRatio, window.devicePixelRatio));
+    const preset = ENVIRONMENT_QUALITY[quality];
+    const mobile = window.innerWidth < 700;
+    this.renderer.setPixelRatio(Math.min(preset.dpr, mobile ? 1.5 : 2, window.devicePixelRatio));
+    this.cloudSystem?.setQuality(quality);
 
     this.scene.traverse(obj => {
       if (obj instanceof THREE.DirectionalLight && obj.shadow) {
-        obj.shadow.mapSize.width = preset.shadowMapSize;
-        obj.shadow.mapSize.height = preset.shadowMapSize;
+        obj.shadow.mapSize.width = (mobile ? 512 : preset.shadow);
+        obj.shadow.mapSize.height = (mobile ? 512 : preset.shadow);
       }
     });
   }
@@ -469,6 +430,10 @@ export class SceneManager {
 
   getRenderer(): THREE.WebGLRenderer {
     return this.renderer;
+  }
+
+  getLightingState(): { sun: THREE.Color; horizon: THREE.Color; mix: number } {
+    return {sun:this.sunLight!.color,horizon:this.atmospherePalette.fogGolden.clone().lerp(this.atmospherePalette.fogTwilight,this.atmosphereValue),mix:this.atmosphereValue};
   }
 
   getScene(): THREE.Scene {
@@ -509,14 +474,15 @@ export class SceneManager {
       const deltaTime = (time - this.lastTime) / 1000;
       this.lastTime = time;
       this.environmentTime += Math.min(deltaTime, 0.1);
-      for (const cloud of this.cloudLayers) {
-        const material = cloud.material as THREE.ShaderMaterial;
-        material.uniforms.uTime.value = this.environmentTime;
-      }
+      const motion = this.reducedMotion ? .05 : document.body.classList.contains('sim-active') ? .7 : 1;
+      this.cloudSystem.update(deltaTime, this.atmosphereValue, motion);
       for (const waterfall of this.waterfallMeshes) {
-        (waterfall.material as THREE.ShaderMaterial).uniforms.uTime.value = this.environmentTime;
+        (waterfall.material as THREE.ShaderMaterial).uniforms.uTime.value = this.environmentTime * (this.reducedMotion ? .05 : 1);
+        (waterfall.material as THREE.ShaderMaterial).uniforms.uTwilight.value = this.atmosphereValue;
       }
-      if (this.cloudBank) this.cloudBank.rotation.y = this.environmentTime * 0.0015;
+      for (const child of this.waterDetails.children) if (child instanceof THREE.Sprite) {
+        child.position.y = child.userData.baseY + Math.sin(this.environmentTime*.13+child.userData.phase)*1.1*motion;
+      }
       this.updateAtmosphere(deltaTime);
       renderCallback(deltaTime);
       this.renderer.render(this.scene, this.camera);
@@ -527,40 +493,33 @@ export class SceneManager {
 
   setAtmosphere(mode: 'golden-hour' | 'twilight'): void {
     this.atmosphereTarget = mode === 'twilight' ? 1 : 0;
-    const reducedMotion = typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
-    if (reducedMotion) {
-      this.atmosphereValue = this.atmosphereTarget;
-      this.updateAtmosphere(0);
-    }
   }
 
   private updateAtmosphere(deltaTime: number): void {
     const reducedMotion = typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
-    const blend = reducedMotion ? this.atmosphereTarget
-      : this.atmosphereValue + (this.atmosphereTarget - this.atmosphereValue) * (1 - Math.exp(-Math.max(0, deltaTime) / 0.9));
+    const blend = this.atmosphereValue + (this.atmosphereTarget - this.atmosphereValue) * (1 - Math.exp(-Math.max(0, deltaTime) / (reducedMotion ? .07 : 1.2)));
     this.atmosphereValue = blend;
     const palette = this.atmospherePalette;
     const sky = this.skyMaterial;
     if (sky) {
       (sky.uniforms.uTop.value as THREE.Color).lerpColors(palette.topGolden, palette.topTwilight, blend);
+      (sky.uniforms.uMid.value as THREE.Color).lerpColors(palette.midGolden, palette.midTwilight, blend);
       (sky.uniforms.uHorizon.value as THREE.Color).lerpColors(palette.horizonGolden, palette.horizonTwilight, blend);
       (sky.uniforms.uBottom.value as THREE.Color).lerpColors(palette.bottomGolden, palette.bottomTwilight, blend);
     }
     if (this.scene.fog instanceof THREE.FogExp2) {
       this.scene.fog.color.lerpColors(palette.fogGolden, palette.fogTwilight, blend);
-      this.scene.fog.density = THREE.MathUtils.lerp(0.0007, 0.00105, blend);
+      this.scene.fog.density = this.config.functionId === 'sphere' ? THREE.MathUtils.lerp(.0009,.0013,blend) : THREE.MathUtils.lerp(0.0018,0.0022,blend);
     }
     if (this.sunLight) {
       this.sunLight.color.lerpColors(palette.sunGolden, palette.sunTwilight, blend);
-      this.sunLight.intensity = THREE.MathUtils.lerp(1.15, 0.62, blend);
+      this.sunLight.intensity = THREE.MathUtils.lerp(2.2, 1.0, blend);
     }
     if (this.ambientLight) {
       this.ambientLight.color.lerpColors(palette.ambientGolden, palette.ambientTwilight, blend);
-      this.ambientLight.intensity = THREE.MathUtils.lerp(0.50, 0.34, blend);
+      this.ambientLight.intensity = THREE.MathUtils.lerp(0.20, 0.18, blend);
     }
-    for (const cloud of this.cloudLayers) {
-      (cloud.material as THREE.ShaderMaterial).uniforms.uTwilight.value = blend;
-    }
+
   }
 
   stopRenderLoop(): void {
@@ -577,6 +536,8 @@ export class SceneManager {
   dispose(): void {
     this.stopRenderLoop();
     window.removeEventListener('resize', this.onResize.bind(this));
+    this.cloudSystem.dispose();
+    this.mistTexture?.dispose();
     this.renderer.dispose();
     this.scene.traverse(obj => {
       if (obj instanceof THREE.Mesh) {
@@ -596,7 +557,7 @@ export class SceneManager {
   }
 
   setFogEnabled(enabled: boolean): void {
-    this.scene.fog = enabled ? new THREE.FogExp2(0xf4ece7, 0.0015) : null;
+    this.scene.fog = enabled ? new THREE.FogExp2(0xafc5d2, 0.0018) : null;
   }
 
   setGridVisible(visible: boolean): void {

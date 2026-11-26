@@ -77,16 +77,16 @@ export class CriticalPointLayer {
     switch (cp.type) {
       case 'local-minimum':
         geometry = new THREE.ConeGeometry(0.22, 0.5, 8);
-        color = 0xe6a23c;
+        color = 0xd6bd88;
         rotationX = Math.PI;
         break;
       case 'local-maximum':
         geometry = new THREE.ConeGeometry(0.22, 0.5, 8);
-        color = 0xd9695f;
+        color = 0xc98273;
         break;
       case 'saddle':
         geometry = new THREE.TorusGeometry(0.2, 0.05, 8, 16);
-        color = 0x7f9bd6;
+        color = 0xa8c9dc;
         offsetY = 0.25;
         break;
       default:
@@ -112,7 +112,7 @@ export class CriticalPointLayer {
   private addGlobalRing(x: number, y: number, z: number): void {
     const geometry = new THREE.RingGeometry(1.1, 1.25, 40);
     const material = new THREE.MeshBasicMaterial({
-      color: 0xcdf5df,
+      color: 0xc5a56a,
       transparent: true,
       opacity: 0.22,
       side: THREE.DoubleSide,

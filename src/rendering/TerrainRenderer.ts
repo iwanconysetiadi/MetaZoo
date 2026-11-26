@@ -1,9 +1,13 @@
 import * as THREE from 'three';
+import { GrassRenderer } from './GrassRenderer';
+import { IslandPresentation } from './IslandPresentation';
 import { OptimizationWorld } from '../core/world/OptimizationWorld';
 import { LandscapeBuffers } from '../core/math/Types';
 import { TerrainMaterial } from './TerrainMaterial';
 
 export class TerrainRenderer {
+  private grass: GrassRenderer;
+  private island: IslandPresentation;
   private world: OptimizationWorld;
   private sceneManager: any;
   private terrainMesh: THREE.Mesh | null = null;
@@ -18,6 +22,9 @@ export class TerrainRenderer {
   private currentBuffers: LandscapeBuffers | null = null;
 
   constructor(world: OptimizationWorld, sceneManager: any) {
+    this.island = new IslandPresentation(world);
+    sceneManager.getTerrainGroup().add(this.island.group);
+    this.grass = new GrassRenderer(world, sceneManager.getTerrainGroup());
     this.world = world;
     this.sceneManager = sceneManager;
     this.resolution = world.getConfig().resolution;
@@ -44,9 +51,6 @@ export class TerrainRenderer {
     const { x1Min, x1Max, x2Min, x2Max } = buffers.domain;
     const domainWidth = x1Max - x1Min;
     const domainHeight = x2Max - x2Min;
-    const worldWidth = 100;
-    const worldDepth = 100;
-
     const positions = new Float32Array(this.resolution * this.resolution * 3);
     const normals = new Float32Array(this.resolution * this.resolution * 3);
     const uvs = new Float32Array(this.resolution * this.resolution * 2);
@@ -111,6 +115,7 @@ export class TerrainRenderer {
     this.terrainMesh.receiveShadow = true;
     this.terrainMesh.frustumCulled = true;
     this.terrainMesh.userData.isTerrain = true;
+    this.terrainMesh.userData.semanticLayer = 'OPTIMIZATION_SURFACE';
     this.sceneManager.getTerrainGroup().add(this.terrainMesh);
 
     this.wireframeMesh = new THREE.Mesh(this.wireframeGeometry, this.wireframeMaterial);
@@ -121,6 +126,9 @@ export class TerrainRenderer {
 
     this.updateMaterialUniforms();
     this.applyOverlays();
+    this.grass.rebuild();
+    this.island.rebuild();
+    this.island.setCleanMode(this.world.getConfig().viewMode !== 'natural');
   }
 
   /**
@@ -134,22 +142,22 @@ export class TerrainRenderer {
     const segments = Math.max(128, res * 2);
     const rings = [
       { radius: 1.00, drop: 0, rough: 0.00 },
-      { radius: 0.99, drop: 3.2, rough: 0.20 },
-      { radius: 0.88, drop: 9.5, rough: 0.44 },
-      { radius: 0.68, drop: 18.0, rough: 0.56 },
-      { radius: 0.43, drop: 27.0, rough: 0.42 },
-      { radius: 0.19, drop: 34.0, rough: 0.22 },
+      { radius: 1.01, drop: 8, rough: 0.20 },
+      { radius: 0.97, drop: 27, rough: 0.44 },
+      { radius: 0.83, drop: 50, rough: 0.56 },
+      { radius: 0.57, drop: 76, rough: 0.42 },
+      { radius: 0.22, drop: 94, rough: 0.22 },
     ];
     const verts: number[] = [];
     const colors: number[] = [];
     const indices: number[] = [];
     const palette = [
-      new THREE.Color('#718779'), // mossy fractured lip
-      new THREE.Color('#64766f'),
-      new THREE.Color('#53656a'),
-      new THREE.Color('#465860'),
+      new THREE.Color('#557654'), // mossy fractured lip
+      new THREE.Color('#59625f'),
+      new THREE.Color('#4d5857'),
+      new THREE.Color('#465150'),
       new THREE.Color('#3a4b55'),
-      new THREE.Color('#34434e'),
+      new THREE.Color('#323e42'),
     ];
     const sample = (u: number, v: number): [number, number, number] => {
       const col = THREE.MathUtils.clamp(u * (res - 1), 0, res - 1);
@@ -170,17 +178,15 @@ export class TerrainRenderer {
       const ringColor = palette[ringIndex];
       for (let i = 0; i < segments; i++) {
         const angle = (i / segments) * Math.PI * 2;
-        const edge = 0.965
-          + 0.035 * Math.sin(angle * 3 + 0.45)
-          + 0.022 * Math.sin(angle * 5 - 1.1)
-          + 0.012 * Math.sin(angle * 9 + 0.8);
-        const jagged = Math.sin(angle * 7 + 1.2) * 0.014 + Math.sin(angle * 13 - 0.7) * 0.008;
-        const radius = edge * ring.radius * (1 + jagged * ring.rough);
-        const u = 0.5 + Math.cos(angle) * radius * 0.5;
-        const v = 0.5 + Math.sin(angle) * radius * 0.5;
+        const squareEdge = 1 / Math.max(Math.abs(Math.sin(angle)), Math.abs(Math.cos(angle)));
+        const u = .5 + Math.sin(angle) * squareEdge * .5;
+        const v = .5 + Math.cos(angle) * squareEdge * .5;
         const [x, surfaceY, z] = sample(u, v);
-        const wave = (Math.sin(angle * 4 + 0.3) * 1.2 + Math.sin(angle * 9) * 0.55) * ring.rough;
-        verts.push(x, surfaceY - ring.drop + wave, z);
+        const jagged = Math.sin(angle * 7 + 1.2) * .065 + Math.sin(angle * 3 - .7) * .040 + Math.sin(Math.floor(i / segments * 28) * 2.3) * .018;
+        const scale = ring.radius * (1 + jagged * ring.rough);
+        const fracture = Math.sin(Math.floor(i / segments * 22) * 2.31);
+        const wave = (Math.sin(angle * 4 + .3) * 6 + fracture * 9) * ring.rough;
+        verts.push(x * scale, surfaceY * (1 - ringIndex / rings.length * .28) - ring.drop + wave, z * scale);
         const shade = 0.92 + 0.08 * Math.sin(angle * 11 + ringIndex * 2.1);
         colors.push(ringColor.r * shade, ringColor.g * shade, ringColor.b * shade);
       }
@@ -197,7 +203,7 @@ export class TerrainRenderer {
     }
 
     const tipIndex = verts.length / 3;
-    verts.push(0, -39, 0);
+    verts.push(-9, -106, 7);
     colors.push(0.19, 0.25, 0.29);
     const lastRing = (rings.length - 1) * segments;
     for (let i = 0; i < segments; i++) {
@@ -212,12 +218,24 @@ export class TerrainRenderer {
 
     const skirtMaterial = new THREE.MeshStandardMaterial({
       vertexColors: true,
-      roughness: 0.96,
+      roughness: 0.88,
       metalness: 0.0,
       side: THREE.DoubleSide,
       flatShading: true,
     });
 
+    skirtMaterial.onBeforeCompile = shader => {
+      shader.vertexShader = 'varying vec3 vRockPosition;\n' + shader.vertexShader;
+      shader.vertexShader = shader.vertexShader.replace('#include <begin_vertex>', '#include <begin_vertex>\nvRockPosition = position;');
+      shader.fragmentShader = 'varying vec3 vRockPosition;\n' + shader.fragmentShader;
+      shader.fragmentShader = shader.fragmentShader.replace('#include <color_fragment>', `
+        #include <color_fragment>
+        float grain = fract(sin(dot(floor(vRockPosition * 3.0), vec3(12.9898,78.233,37.719))) * 43758.5453);
+        float strata = sin(vRockPosition.y * .45 + sin(vRockPosition.x * .12) * 2.0 + sin(vRockPosition.z * .16));
+        float verticalCut = sin(vRockPosition.x * .35 + sin(vRockPosition.z * .24) * 2.5);
+        diffuseColor.rgb *= .92 + grain * .07 + strata * .035 + verticalCut * .035;
+      `);
+    };
     this.skirtMesh = new THREE.Mesh(this.skirtGeometry, skirtMaterial);
     this.skirtMesh.userData.isSkirt = true;
     this.sceneManager.getTerrainGroup().add(this.skirtMesh);
@@ -240,7 +258,10 @@ export class TerrainRenderer {
     this.material.uniforms.uVerticalScale.value = config.verticalScale;
     this.material.uniforms.uHeightMapping.value = this.getHeightMappingIndex(config.heightMapping);
     this.material.uniforms.uTime.value = 0;
-    this.material.uniforms.uIslandMaskEnabled.value = config.viewMode === 'natural' ? 1 : 0;
+    // The complete x1/x2 domain maps invertibly onto the organic island in all modes.
+    this.material.uniforms.uIslandMaskEnabled.value = 0;
+    this.material.uniforms.uSanctuary.value = config.functionId === 'sphere' ? 1 : 0;
+    this.material.uniforms.uViewStyle.value = config.viewMode === 'natural' ? 0 : config.viewMode === 'scientific' ? 1 : 2;
     this.material.uniforms.uDomainMin.value.set(
       config.domain.x1Min,
       config.domain.x2Min
@@ -309,6 +330,8 @@ export class TerrainRenderer {
   }
 
   dispose(): void {
+    this.grass.dispose();
+    this.island.dispose();
     if (this.terrainMesh) {
       this.sceneManager.getTerrainGroup().remove(this.terrainMesh);
       this.terrainMesh.geometry.dispose();

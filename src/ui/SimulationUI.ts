@@ -1,3 +1,4 @@
+import { buttonContent, icon, anchorPanel } from './UISystem';
 import { SimulationEngine } from '../core/simulation/SimulationEngine';
 import {
   listOptimizerDescriptors, getOptimizerDescriptor,
@@ -8,6 +9,8 @@ import type {
 
 export interface SimulationUICallbacks {
   onBeforeOpen?: () => void;
+  onTrailsChange?: (enabled: boolean) => void;
+  onBestPathChange?: (enabled: boolean) => void;
 }
 
 interface FormState {
@@ -41,6 +44,7 @@ export class SimulationUI {
   private engine: SimulationEngine;
   private callbacks: SimulationUICallbacks;
 
+  private releasePanelAnchor?: () => void;
   private dockButton!: HTMLButtonElement;
   private panel!: HTMLElement;
   private strip!: HTMLElement;
@@ -59,6 +63,9 @@ export class SimulationUI {
   private stripBest!: HTMLElement;
   private stripDiversity!: HTMLElement;
   private stripSpeed!: HTMLSelectElement;
+
+  private trailChoice: boolean | null = null;
+  private bestPathChoice = false;
 
   private form: FormState = {
     optimizerId: 'random-search',
@@ -82,6 +89,8 @@ export class SimulationUI {
   constructor(engine: SimulationEngine, callbacks: SimulationUICallbacks = {}) {
     this.engine = engine;
     this.callbacks = callbacks;
+    document.addEventListener('keydown', event => { if (event.key === 'Escape' && !event.defaultPrevented && this.panelOpen) { this.closePanel(); this.dockButton?.focus(); } });
+    document.addEventListener('metazoo:panel-open', e => { if ((e as CustomEvent).detail !== 'simulation') this.closePanel(); });
     this.buildDockButton();
     this.buildPanel();
     this.buildStrip();
@@ -97,7 +106,7 @@ export class SimulationUI {
     if (!dock) return;
     dock.appendChild(el('div', 'dock-divider'));
     this.dockButton = el('button', 'dock-btn sim-dock-btn');
-    this.dockButton.appendChild(el('span', 'ico', '▶'));
+    this.dockButton.appendChild(icon('play'));
     this.dockButton.appendChild(el('span', 'lbl', 'Simulation'));
     this.dockButton.title = 'Open simulation controls';
     this.dockButton.addEventListener('click', () => this.togglePanel());
@@ -159,6 +168,9 @@ export class SimulationUI {
       this.engine.setPlaybackSpeed(parseFloat(this.stripSpeed.value));
     });
 
+    for (const [button, name, label] of [[this.stripPlay, 'play', 'Play or pause'], [this.stripStep, 'step', 'Step once'], [this.stripReset, 'reset', 'Reset run']] as const) { buttonContent(button, name); button.setAttribute('aria-label', label); }
+    this.stripSpeed.setAttribute('aria-label', 'Playback speed');
+    const badge = el('span', 'ui-status-badge', 'Ready'); badge.id = 'sim-strip-status'; this.strip.append(badge);
     this.strip.appendChild(this.stripPlay);
     this.strip.appendChild(this.stripStep);
     this.strip.appendChild(this.stripReset);
@@ -201,14 +213,20 @@ export class SimulationUI {
     else this.openPanel();
   }
   openPanel(): void {
+    document.dispatchEvent(new CustomEvent('metazoo:panel-open', { detail: 'simulation' }));
     this.callbacks.onBeforeOpen?.();
     this.panelOpen = true;
     this.panel.classList.add('open');
     this.dockButton?.classList.add('active');
     this.renderPanel();
+    this.releasePanelAnchor?.();
+    if (this.dockButton) this.releasePanelAnchor = anchorPanel(this.panel, this.dockButton);
+    this.dockButton?.setAttribute('aria-expanded', 'true');
   }
 
   private closePanel(): void {
+    this.releasePanelAnchor?.(); this.releasePanelAnchor = undefined;
+    this.dockButton?.setAttribute('aria-expanded', 'false');
     this.panelOpen = false;
     this.panel.classList.remove('open');
     this.dockButton?.classList.remove('active');
@@ -338,6 +356,7 @@ export class SimulationUI {
     const reset = el('button', 'btn', '↺ RESET');
     reset.addEventListener('click', () => this.engine.reset());
     controls.appendChild(reset);
+    buttonContent(play, 'play', 'Play'); buttonContent(step, 'step', 'Step'); buttonContent(reset, 'reset', 'Reset');
     this.panelBody.appendChild(controls);
 
     const speedRow = el('div', 'sim-field-row sim-speed-row');
@@ -354,6 +373,22 @@ export class SimulationUI {
     speedRow.appendChild(speed);
     this.panelBody.appendChild(speedRow);
 
+    const display = el('div', 'sim-control-row');
+    const trails = el('button', 'btn', this.trailChoice === null ? 'Trails: Auto' : this.trailChoice ? 'Trails: On' : 'Trails: Off');
+    trails.addEventListener('click', () => {
+      this.trailChoice = this.trailChoice === null ? true : !this.trailChoice;
+      trails.textContent = this.trailChoice ? 'Trails: On' : 'Trails: Off';
+      trails.setAttribute('aria-pressed', String(this.trailChoice));
+      this.callbacks.onTrailsChange?.(this.trailChoice);
+    });
+    const bestPath = el('button', 'btn', 'Best path');
+    bestPath.setAttribute('aria-pressed', String(this.bestPathChoice));
+    bestPath.addEventListener('click', () => {
+      this.bestPathChoice = !this.bestPathChoice;
+      bestPath.setAttribute('aria-pressed', String(this.bestPathChoice));
+      this.callbacks.onBestPathChange?.(this.bestPathChoice);
+    });
+    display.append(trails, bestPath); this.panelBody.appendChild(display);
     const metrics = el('div', 'sim-metrics');
     this.metric(metrics, 'Iteration', 'sim-iteration');
     this.metric(metrics, 'Evaluations', 'sim-evaluations');
@@ -385,6 +420,7 @@ export class SimulationUI {
     logRow.appendChild(el('span', '', 'Log scale'));
     this.panelBody.appendChild(logRow);
 
+    const advancedStart = this.panelBody.children.length;
     this.panelBody.appendChild(el('div', 'sim-section-label', 'History'));
     const scrubRow = el('div', 'sim-scrub-row');
     this.scrubber = document.createElement('input');
@@ -420,7 +456,9 @@ export class SimulationUI {
     exportButton.addEventListener('click', () => this.exportConfig());
     actions.appendChild(exportButton);
     this.panelBody.appendChild(actions);
-
+    const advanced = el('details', 'ui-disclosure'); advanced.append(el('summary', '', 'History & export'));
+    Array.from(this.panelBody.children).slice(advancedStart).forEach(node => advanced.append(node)); this.panelBody.append(advanced);
+    this.scrubber.setAttribute('aria-label', 'Simulation history');
     this.update(true);
   }
 
@@ -608,7 +646,7 @@ export class SimulationUI {
 
     if (!hasRun) {
       this.staleBanner.classList.remove('show');
-      this.stripPlay.textContent = '▶';
+      buttonContent(this.stripPlay, 'play');
       return;
     }
 
@@ -617,7 +655,8 @@ export class SimulationUI {
     const history = this.engine.getHistory();
     const viewingHistory = this.engine.isViewingHistory();
 
-    this.stripPlay.textContent = status === 'RUNNING' ? '❚❚' : '▶';
+    buttonContent(this.stripPlay, status === 'RUNNING' ? 'pause' : 'play');
+    const badge = document.getElementById('sim-strip-status'); if (badge) { badge.textContent = this.statusText(status, this.engine.getCompletionReason()); badge.dataset.status = status.toLowerCase(); }
     const canControl = status === 'RUNNING' || status === 'READY' || status === 'PAUSED';
     this.stripPlay.disabled = !canControl;
     this.stripStep.disabled = status === 'COMPLETED' || status === 'FAILED' || status === 'STALE';
@@ -635,6 +674,7 @@ export class SimulationUI {
       this.setText('sim-best', numberText(state?.statistics.bestFitness ?? Infinity));
       this.setText('sim-diversity', (state?.statistics.candidateCount ?? 0) > 1
         ? numberText(state?.statistics.diversity ?? 0, 3) : 'N/A');
+      const statusValue = document.getElementById('sim-status-value'); if (statusValue) statusValue.dataset.status = status.toLowerCase();
       this.setText('sim-status-value', this.statusText(status, this.engine.getCompletionReason()));
 
       const errorNode = document.getElementById('sim-error');
@@ -646,7 +686,7 @@ export class SimulationUI {
 
       const play = this.panelBody.querySelector<HTMLButtonElement>('[data-sim-action="play"]');
       if (play) {
-        play.textContent = status === 'RUNNING' ? '❚❚ PAUSE' : '▶ PLAY';
+        buttonContent(play, status === 'RUNNING' ? 'pause' : 'play', status === 'RUNNING' ? 'Pause' : 'Play');
         play.disabled = !canControl;
       }
       const step = this.panelBody.querySelector<HTMLButtonElement>('[data-sim-action="step"]');
@@ -733,7 +773,7 @@ export class SimulationUI {
     ctx.clearRect(0, 0, W, H);
 
     if (data.iteration.length < 2) {
-      ctx.fillStyle = 'rgba(83,101,141,0.62)';
+      ctx.fillStyle = 'rgba(203,218,217,0.8)';
       ctx.font = '600 22px "JetBrains Mono", monospace';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
@@ -770,7 +810,7 @@ export class SimulationUI {
     const xOf = (iteration: number) => padL + ((iteration - iterationMin) / iterRange) * plotW;
     const yOf = (value: number) => padT + (1 - (transform(value) - tMin) / range) * plotH;
 
-    ctx.strokeStyle = 'rgba(16,32,90,0.10)';
+    ctx.strokeStyle = 'rgba(230,238,236,0.10)';
     ctx.lineWidth = 1;
     for (let g = 0; g <= 4; g++) {
       const y = padT + (g / 4) * plotH;
@@ -796,22 +836,22 @@ export class SimulationUI {
     };
 
     drawSeries(data.meanFitness, 'rgba(39,124,152,0.48)', 1.5);
-    drawSeries(data.bestFitness, '#287d78', 2.5);
+    drawSeries(data.bestFitness, '#9acbb9', 2.5);
 
     const best = data.bestFitness[data.bestFitness.length - 1];
-    ctx.fillStyle = '#287d78';
+    ctx.fillStyle = '#9acbb9';
     ctx.beginPath();
     ctx.arc(xOf(iterationMax), yOf(best), 5, 0, Math.PI * 2);
     ctx.fill();
 
-    ctx.fillStyle = 'rgba(83,101,141,0.88)';
+    ctx.fillStyle = 'rgba(203,218,217,0.9)';
     ctx.font = '600 18px "JetBrains Mono", monospace';
     ctx.textAlign = 'right';
     ctx.textBaseline = 'middle';
     ctx.fillText(this.logScale ? `10^${tMax.toFixed(1)}` : numberText(max, 2), padL - 8, padT + 4);
     ctx.fillText(this.logScale ? `10^${tMin.toFixed(1)}` : numberText(min, 2), padL - 8, padT + plotH - 4);
 
-    ctx.fillStyle = 'rgba(123,139,156,0.9)';
+    ctx.fillStyle = 'rgba(185,201,202,0.95)';
     ctx.font = '600 16px "JetBrains Mono", monospace';
     ctx.textAlign = 'left';
     ctx.textBaseline = 'alphabetic';
@@ -834,6 +874,7 @@ export class SimulationUI {
   }
 
   dispose(): void {
+    this.releasePanelAnchor?.();
     this.dockButton?.remove();
     this.panel.remove();
     this.strip.remove();

@@ -1,4 +1,4 @@
-import type { SimulationSnapshot } from './types';
+import type { HistoryStrategy, SimulationSnapshot } from './types';
 
 /**
  * Bounded snapshot history. When the cap is reached the history is decimated
@@ -10,16 +10,29 @@ export class SimulationHistory {
   private snapshots: SimulationSnapshot[] = [];
   private maxSnapshots: number;
   private stride = 1;
+  private strategy: HistoryStrategy = 'FULL';
+  private interval = 10;
 
   constructor(maxSnapshots = 2000) {
     this.maxSnapshots = Math.max(2, Math.floor(maxSnapshots));
   }
 
+  setStrategy(strategy: HistoryStrategy, interval = 10): void {
+    this.strategy = strategy;
+    this.interval = Math.max(1, Math.floor(interval));
+  }
+
   push(snapshot: SimulationSnapshot): void {
-    this.snapshots.push(snapshot);
-    if (this.snapshots.length > this.maxSnapshots) {
-      this.decimate();
+    if (this.strategy === 'NONE') return;
+    if (this.strategy === 'INTERVAL' && this.snapshots.length > 0 && snapshot.iteration % this.interval !== 0) {
+      return;
     }
+    this.snapshots.push(snapshot);
+    if (this.strategy === 'RING') {
+      if (this.snapshots.length > this.maxSnapshots) this.snapshots.shift();
+      return;
+    }
+    if (this.snapshots.length > this.maxSnapshots) this.decimate();
   }
 
   private decimate(): void {

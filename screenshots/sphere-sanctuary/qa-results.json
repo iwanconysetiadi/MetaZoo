@@ -1,0 +1,8 @@
+{
+  "checks": {
+    "optimum": 0,
+    "offCenter": 5,
+    "function": "sphere"
+  },
+  "errors": []
+}

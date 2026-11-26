@@ -1,0 +1,149 @@
+{
+  "checks": [
+    {
+      "name": "World identity is one line 1920",
+      "pass": true
+    },
+    {
+      "name": "Bottom instruments aligned 1920",
+      "pass": true
+    },
+    {
+      "name": "No horizontal overflow 1920",
+      "pass": true
+    },
+    {
+      "name": "Header groups do not overlap 1920",
+      "pass": true
+    },
+    {
+      "name": "Cinematic is a primary camera control 1920",
+      "pass": true
+    },
+    {
+      "name": "Atlas fits viewport 1920",
+      "pass": true
+    },
+    {
+      "name": "My Worlds tab 1920",
+      "pass": true
+    },
+    {
+      "name": "Escape closes Atlas 1920",
+      "pass": true
+    },
+    {
+      "name": "Dark dropdown 1920",
+      "pass": true
+    },
+    {
+      "name": "One active contextual panel 1920",
+      "pass": true
+    },
+    {
+      "name": "Live math preview 1920",
+      "pass": true
+    },
+    {
+      "name": "World identity is one line 1440",
+      "pass": true
+    },
+    {
+      "name": "Bottom instruments aligned 1440",
+      "pass": true
+    },
+    {
+      "name": "No horizontal overflow 1440",
+      "pass": true
+    },
+    {
+      "name": "Header groups do not overlap 1440",
+      "pass": true
+    },
+    {
+      "name": "Cinematic is a primary camera control 1440",
+      "pass": true
+    },
+    {
+      "name": "Atlas fits viewport 1440",
+      "pass": true
+    },
+    {
+      "name": "My Worlds tab 1440",
+      "pass": true
+    },
+    {
+      "name": "Escape closes Atlas 1440",
+      "pass": true
+    },
+    {
+      "name": "Dark dropdown 1440",
+      "pass": true
+    },
+    {
+      "name": "One active contextual panel 1440",
+      "pass": true
+    },
+    {
+      "name": "Live math preview 1440",
+      "pass": true
+    },
+    {
+      "name": "World identity is one line 1280",
+      "pass": true
+    },
+    {
+      "name": "Bottom instruments aligned 1280",
+      "pass": true
+    },
+    {
+      "name": "No horizontal overflow 1280",
+      "pass": true
+    },
+    {
+      "name": "Header groups do not overlap 1280",
+      "pass": true
+    },
+    {
+      "name": "Cinematic is a primary camera control 1280",
+      "pass": true
+    },
+    {
+      "name": "Atlas fits viewport 1280",
+      "pass": true
+    },
+    {
+      "name": "My Worlds tab 1280",
+      "pass": true
+    },
+    {
+      "name": "Escape closes Atlas 1280",
+      "pass": true
+    },
+    {
+      "name": "Dark dropdown 1280",
+      "pass": true
+    },
+    {
+      "name": "One active contextual panel 1280",
+      "pass": true
+    },
+    {
+      "name": "Live math preview 1280",
+      "pass": true
+    },
+    {
+      "name": "SVG controls and run status",
+      "pass": true
+    },
+    {
+      "name": "Mode active state",
+      "pass": true
+    },
+    {
+      "name": "Presentation hides instruments",
+      "pass": true
+    }
+  ],
+  "errors": []
+}

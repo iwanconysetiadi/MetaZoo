@@ -51,12 +51,23 @@ export interface OptimizerStatistics {
   diversity: number;
   feasibleRatio: number;
   candidateCount: number;
+  centroid?: Vector2;
+  spread?: number;
 }
+
+export type CandidateLifecycleType =
+  | 'candidate-created'
+  | 'candidate-activated'
+  | 'candidate-deactivated'
+  | 'candidate-reinitialized'
+  | 'candidate-replaced'
+  | 'candidate-removed';
 
 export interface OptimizerEvent {
   id: string;
   type: string;
   iteration: number;
+  eventSequence?: number;
   candidateIds?: string[];
   data?: Record<string, unknown>;
 }
@@ -147,6 +158,8 @@ export interface WorldCapabilities {
   knownGlobalOptimum: boolean;
 }
 
+export type HistoryStrategy = 'FULL' | 'INTERVAL' | 'RING' | 'NONE';
+
 export type CompatibilityLevel = 'SUPPORTED' | 'SUPPORTED_WITH_CAUTION' | 'UNSUPPORTED';
 
 export interface CompatibilityResult {
@@ -182,6 +195,8 @@ export interface RunMetadata {
   targetTolerance?: number;
   optimizerParameters: Record<string, unknown>;
   createdAt: string;
+  historyStrategy?: HistoryStrategy;
+  historyInterval?: number;
 }
 
 export interface RunConfiguration {
@@ -201,6 +216,8 @@ export interface RunConfiguration {
   targetTolerance?: number;
   optimizerParameters: Record<string, unknown>;
   createdAt: string;
+  historyStrategy?: HistoryStrategy;
+  historyInterval?: number;
 }
 
 export interface SimulationSnapshot {
@@ -299,7 +316,10 @@ export function cloneOptimizerState(state: OptimizerState): OptimizerState {
       position: cloneVector(state.best.position),
       fitness: state.best.fitness,
     },
-    statistics: { ...state.statistics },
+    statistics: {
+      ...state.statistics,
+      centroid: state.statistics.centroid ? cloneVector(state.statistics.centroid) : undefined,
+    },
     events: state.events.map(e => ({ ...e, candidateIds: e.candidateIds ? [...e.candidateIds] : undefined, data: e.data ? deepClone(e.data) : undefined })),
     algorithmState: state.algorithmState ? deepClone(state.algorithmState) : undefined,
   };
@@ -315,7 +335,10 @@ export function snapshotToState(snapshot: SimulationSnapshot): OptimizerState {
       position: cloneVector(snapshot.best.position),
       fitness: snapshot.best.fitness,
     },
-    statistics: { ...snapshot.statistics },
+    statistics: {
+      ...snapshot.statistics,
+      centroid: snapshot.statistics.centroid ? cloneVector(snapshot.statistics.centroid) : undefined,
+    },
     events: snapshot.events.map(e => ({ ...e, candidateIds: e.candidateIds ? [...e.candidateIds] : undefined })),
     algorithmState: snapshot.algorithmState ? deepClone(snapshot.algorithmState) : undefined,
   };

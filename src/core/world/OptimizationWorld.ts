@@ -23,7 +23,7 @@ export class OptimizationWorld {
 
     // Give the floating landscape more room in the scene while keeping the
     // optimization domain and all objective coordinates unchanged.
-    this.mapper = new CoordinateMapper(config, this.currentFunction, 130, 130, config.verticalScale);
+    this.mapper = new CoordinateMapper(config, this.currentFunction, 180, 180, config.verticalScale);
     this.sampler = new LandscapeSampler(this.currentFunction, this.mapper, config.resolution);
     this.sampler.setNormalizationMode(config.normalizationMode);
   }

@@ -9,6 +9,9 @@ export interface TelemetryData {
   diversity: number[];
   feasibleRatio: number[];
   distanceToReference: number[];
+  centroidX: number[];
+  centroidY: number[];
+  spread: number[];
 }
 
 /**
@@ -25,6 +28,9 @@ export class Telemetry {
     diversity: [],
     feasibleRatio: [],
     distanceToReference: [],
+    centroidX: [],
+    centroidY: [],
+    spread: [],
   };
 
   record(snapshot: SimulationSnapshot, distanceToReference = NaN): void {
@@ -36,6 +42,9 @@ export class Telemetry {
     this.data.diversity.push(snapshot.statistics.diversity);
     this.data.feasibleRatio.push(snapshot.statistics.feasibleRatio);
     this.data.distanceToReference.push(distanceToReference);
+    this.data.centroidX.push(snapshot.statistics.centroid?.x ?? NaN);
+    this.data.centroidY.push(snapshot.statistics.centroid?.y ?? NaN);
+    this.data.spread.push(snapshot.statistics.spread ?? 0);
   }
 
   getData(): TelemetryData {
@@ -52,6 +61,9 @@ export class Telemetry {
       diversity: [],
       feasibleRatio: [],
       distanceToReference: [],
+      centroidX: [],
+      centroidY: [],
+      spread: [],
     };
   }
 }

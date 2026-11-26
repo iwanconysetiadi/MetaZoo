@@ -290,6 +290,17 @@ describe('SimulationEngine', () => {
     expect(state?.statistics.diversity).toBe(0);
   });
 
+  it('records population centroid and spread telemetry for N > 1', () => {
+    const engine = makeEngine();
+    setupEngine(engine, { populationSize: 8 });
+    engine.stepOnce();
+    const state = engine.getState()!;
+    expect(state.statistics.centroid).toBeTruthy();
+    expect(Number.isFinite(state.statistics.spread!)).toBe(true);
+    const telemetry = engine.getTelemetry().getData();
+    expect(Number.isFinite(telemetry.centroidX[telemetry.centroidX.length - 1])).toBe(true);
+  });
+
   it('records telemetry and supports history scrubbing', () => {
     const engine = makeEngine();
     setupEngine(engine, { maxIterations: 20 });
@@ -324,6 +335,42 @@ describe('SimulationEngine', () => {
     expect(a.iterations).toBe(b.iterations);
     expect(a.completionReason).toBe(b.completionReason);
     expect(a.telemetry.iteration).toEqual(b.telemetry.iteration);
+  });
+
+  it('supports interval and ring history strategies', () => {
+    const intervalEngine = makeEngine();
+    setupEngine(intervalEngine, { historyStrategy: 'INTERVAL', historyInterval: 5, maxIterations: 20 });
+    for (let i = 0; i < 20; i++) intervalEngine.stepOnce();
+    const intervalSnapshots = intervalEngine.getHistory().getAll();
+    expect(intervalSnapshots.length).toBeLessThan(21);
+    expect(intervalSnapshots.every(s => s.iteration % 5 === 0)).toBe(true);
+
+    const ringEngine = makeEngine();
+    setupEngine(ringEngine, { maxIterations: 50 });
+    ringEngine.getHistory().setStrategy('RING', 10);
+    for (let i = 0; i < 50; i++) ringEngine.stepOnce();
+    expect(ringEngine.getHistory().size).toBeLessThanOrEqual(2000);
+  });
+
+  it('publishes ordered lifecycle events through the event bus', () => {
+    const engine = makeEngine();
+    setupEngine(engine);
+    engine.stepOnce();
+    const latest = engine.getHistory().latest();
+    expect(latest).toBeTruthy();
+    const sequences = latest!.events.map(e => e.eventSequence ?? -1);
+    expect(sequences).toEqual([...sequences].sort((a, b) => a - b));
+  });
+
+  it('publishes engine events for initialization and completion', () => {
+    const world = makeWorld();
+    const engine = new SimulationEngine(world);
+    const types: string[] = [];
+    engine.eventBus.subscribe('run-initialized', () => types.push('initialized'));
+    engine.eventBus.subscribe('run-completed', () => types.push('completed'));
+    setupEngine(engine, { maxIterations: 1 });
+    engine.stepOnce();
+    expect(types).toEqual(['initialized', 'completed']);
   });
 
   it('resumes deterministically from a checkpoint', () => {

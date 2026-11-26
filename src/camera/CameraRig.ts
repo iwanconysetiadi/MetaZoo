@@ -9,26 +9,26 @@ export interface FunctionView {
   verticalScale: number;
 }
 
-// Benchmark-specific framing. The world is a centered 130x130 domain; the
+// Benchmark-specific framing. The world is a centered 180x180 domain; the
 // optimisation domain is remapped into it, so positions are in world units.
 const FUNCTION_VIEWS: Record<string, FunctionView> = {
-  sphere: { pos: [76, 54, 76], target: [0, 3, 0], fov: 50, verticalScale: 1.6 },
-  ellipsoid: { pos: [76, 54, 76], target: [0, 3, 0], fov: 50, verticalScale: 1.6 },
-  booth: { pos: [66, 50, 80], target: [5, 2, 12], fov: 50, verticalScale: 1.6 },
-  rastrigin: { pos: [96, 60, 96], target: [0, 1, 0], fov: 50, verticalScale: 1.15 },
-  ackley: { pos: [96, 70, 96], target: [0, 3, 0], fov: 50, verticalScale: 1.7 },
-  rosenbrock: { pos: [26, 40, 98], target: [8, 6, 4], fov: 52, verticalScale: 2.4 },
-  himmelblau: { pos: [96, 64, 96], target: [0, 1, 0], fov: 52, verticalScale: 1.6 },
-  griewank: { pos: [92, 78, 92], target: [0, 3, 0], fov: 50, verticalScale: 1.5 },
-  schwefel: { pos: [96, 60, 96], target: [0, 1, 0], fov: 50, verticalScale: 1.1 },
-  beale: { pos: [64, 50, 80], target: [6, 3, 6], fov: 52, verticalScale: 1.8 },
-  matyas: { pos: [76, 54, 76], target: [0, 3, 0], fov: 50, verticalScale: 1.6 },
-  easom: { pos: [66, 50, 78], target: [0, 3, 0], fov: 50, verticalScale: 1.4 },
-  'three-hump-camel': { pos: [70, 50, 70], target: [0, 3, 0], fov: 48, verticalScale: 1.6 },
-  'six-hump-camel': { pos: [70, 50, 70], target: [0, 3, 0], fov: 48, verticalScale: 1.6 },
+  sphere: { pos: [76, 54, 76], target: [0, 3, 0], fov: 43, verticalScale: 1.6 },
+  ellipsoid: { pos: [76, 54, 76], target: [0, 3, 0], fov: 43, verticalScale: 1.6 },
+  booth: { pos: [66, 50, 80], target: [5, 2, 12], fov: 43, verticalScale: 1.6 },
+  rastrigin: { pos: [96, 82, 96], target: [0, 1, 0], fov: 43, verticalScale: 1.15 },
+  ackley: { pos: [96, 70, 96], target: [0, 3, 0], fov: 43, verticalScale: 1.7 },
+  rosenbrock: { pos: [26, 40, 98], target: [8, 6, 4], fov: 45, verticalScale: 2.4 },
+  himmelblau: { pos: [96, 86, 96], target: [0, 1, 0], fov: 45, verticalScale: 1.6 },
+  griewank: { pos: [92, 78, 92], target: [0, 3, 0], fov: 43, verticalScale: 1.5 },
+  schwefel: { pos: [96, 60, 96], target: [0, 1, 0], fov: 43, verticalScale: 1.1 },
+  beale: { pos: [64, 50, 80], target: [6, 3, 6], fov: 45, verticalScale: 1.8 },
+  matyas: { pos: [76, 54, 76], target: [0, 3, 0], fov: 43, verticalScale: 1.6 },
+  easom: { pos: [66, 50, 78], target: [0, 3, 0], fov: 43, verticalScale: 1.4 },
+  'three-hump-camel': { pos: [70, 50, 70], target: [0, 3, 0], fov: 43, verticalScale: 1.6 },
+  'six-hump-camel': { pos: [70, 50, 70], target: [0, 3, 0], fov: 43, verticalScale: 1.6 },
 };
 
-const DEFAULT_VIEW: FunctionView = { pos: [84, 66, 84], target: [0, 4, 0], fov: 50, verticalScale: 1.6 };
+const DEFAULT_VIEW: FunctionView = { pos: [84, 66, 84], target: [0, 4, 0], fov: 43, verticalScale: 1.6 };
 
 export class CameraRig {
   static getFunctionView(id: string): FunctionView {
@@ -51,14 +51,14 @@ export class CameraRig {
   private orbitTheta = Math.PI / 4;
   private orbitPhi = Math.PI / 4;
   private minRadius = 12;
-  private maxRadius = 320;
+  private maxRadius = 1400;
 
   constructor(camera: THREE.PerspectiveCamera, world: OptimizationWorld) {
     this.camera = camera;
     this.world = world;
     if (typeof window !== 'undefined' && window.matchMedia &&
         window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
-      this.transitionDuration = 0.05;
+      this.transitionDuration = 0.2;
     }
     this.applyPreset('orbit');
   }
@@ -88,6 +88,14 @@ export class CameraRig {
       .multiplyScalar(1.2)
       .add(target);
 
+    // Fit the complete 180-unit island at a cinematic FOV, including portrait screens.
+    const rel = pos.clone().sub(target);
+    rel.y *= .78;
+    const portrait = Math.max(1, 1 / this.camera.aspect);
+    rel.setLength(Math.max(rel.length(), 380 * portrait));
+    // Aim slightly beside and below the surface so the rock mass and sky share the frame.
+    target.add(new THREE.Vector3(15,-34,-9));
+    pos.copy(target).add(rel);
     this.camera.fov = view.fov;
     this.camera.updateProjectionMatrix();
 
@@ -135,8 +143,11 @@ export class CameraRig {
     const primaryMin = minima[0];
 
     switch (preset) {
+      case 'underside': {
+        outPos.set(205, -12, 205); outTarget.set(0, -25, 0); break;
+      }
       case 'overview': {
-        outPos.set(101, 79, 101);
+        outPos.set(216, 148, 216);
         outTarget.set(0, 4, 0);
         break;
       }
@@ -149,7 +160,7 @@ export class CameraRig {
         break;
       }
       case 'top-down': {
-        outPos.set(0, 180, 0.001);
+        outPos.set(0, 380 * Math.max(1, 1 / this.camera.aspect), 0.001);
         outTarget.set(0, 0, 0);
         break;
       }
@@ -210,12 +221,12 @@ export class CameraRig {
         break;
       }
       case 'cinematic': {
-        outPos.set(120, 96, 120);
+        outPos.set(216, 145, 216);
         outTarget.set(0, 0, 0);
         break;
       }
       default: {
-        outPos.set(101, 79, 101);
+        outPos.set(216, 148, 216);
         outTarget.set(0, 4, 0);
       }
     }

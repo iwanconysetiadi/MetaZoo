@@ -1,3 +1,4 @@
+import { registerDialog } from './UISystem';
 import { parseExpression, EXPRESSION_EXAMPLES } from '../core/expression';
 import { validateObjective, validateDomain } from '../core/custom/validation';
 import { SearchDomain } from '../core/custom/ReferenceOptimum';
@@ -84,6 +85,7 @@ export class CustomLab {
     this.root.id = 'ui-lab';
     this.root.addEventListener('click', (e) => { if (e.target === this.root) this.close(); });
     document.body.appendChild(this.root);
+    this.root.setAttribute('aria-label', 'World editor'); registerDialog(this.root, () => this.close());
     this.state = this.blankState();
   }
 
@@ -198,6 +200,7 @@ export class CustomLab {
 
   // ---------------------------------------------------------------- render
   private render(): void {
+    document.dispatchEvent(new CustomEvent('metazoo:panel-open', { detail: 'editor' }));
     this.root.classList.add('open');
     this.root.innerHTML = '';
 
@@ -277,7 +280,8 @@ export class CustomLab {
   }
 
   private makeSwitch(on: boolean, onChange: (v: boolean) => void): HTMLElement {
-    const s = el('div', 'switch' + (on ? ' on' : ''));
+    const s = el('button', 'switch' + (on ? ' on' : ''));
+    s.setAttribute('role', 'switch'); s.setAttribute('aria-checked', String(on)); s.setAttribute('aria-label', 'Enable option');
     s.addEventListener('click', () => {
       const v = !s.classList.contains('on');
       s.classList.toggle('on', v);
@@ -300,8 +304,18 @@ export class CustomLab {
     expr.value = s.expression;
     expr.spellcheck = false;
     expr.placeholder = 'e.g. x1^2 + 2*x2^2 + 3*sin(x1*x2)';
-    expr.addEventListener('input', () => { s.expression = expr.value; this.schedulePreview(); });
-    container.appendChild(this.field('f(x₁, x₂) =', expr));
+    const math = el('div', 'ui-math-preview'); math.setAttribute('aria-live', 'polite');
+    const renderMath = () => {
+      math.replaceChildren();
+      try {
+        const formatted = 'f(x\u2081, x\u2082) = ' + parseExpression(expr.value).formatted;
+        const parts = formatted.split(/(\^(?:-?\d+(?:\.\d+)?|\([^)]*\)|[a-z][\u2081\u2082]?))/gi);
+        for (const part of parts) { if (part.startsWith('^')) { const sup = document.createElement('sup'); sup.textContent = part.slice(1); math.append(sup); } else math.append(document.createTextNode(part.replace(/ \* /g, ' \u00b7 '))); }
+      } catch { math.textContent = 'Complete your expression to preview it.'; }
+    };
+    expr.setAttribute('aria-label', 'Objective function expression');
+    expr.addEventListener('input', () => { s.expression = expr.value; renderMath(); this.schedulePreview(); });
+    container.appendChild(this.field('Objective Function', expr)); container.append(math); renderMath();
 
     // Domain
     const domWrap = el('div');
@@ -485,12 +499,13 @@ export class CustomLab {
   }
 
   private makeSwitchInline(on: boolean, onChange: (v: boolean) => void): HTMLElement {
-    const s = el('div', 'switch' + (on ? ' on' : ''));
+    const s = el('button', 'switch' + (on ? ' on' : ''));
+    s.setAttribute('role', 'switch'); s.setAttribute('aria-checked', String(on)); s.setAttribute('aria-label', 'Enable feature');
     s.addEventListener('click', (e) => {
       e.stopPropagation();
       const v = !s.classList.contains('on');
       s.classList.toggle('on', v);
-      onChange(v);
+      s.setAttribute('aria-checked', String(v)); onChange(v);
     });
     return s;
   }

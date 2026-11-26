@@ -1,0 +1,20 @@
+﻿import { writeFile, mkdir } from 'node:fs/promises';
+const tabs=await(await fetch('http://127.0.0.1:9225/json/list')).json();
+const ws=new WebSocket(tabs.find(x=>x.type==='page').webSocketDebuggerUrl);await new Promise(r=>ws.addEventListener('open',r,{once:true}));
+let id=0;const pending=new Map(), errors=[];
+ws.addEventListener('message',e=>{const m=JSON.parse(e.data);if(m.id){const p=pending.get(m.id);pending.delete(m.id);m.error?p.reject(m.error):p.resolve(m.result);}if(m.method==='Runtime.exceptionThrown')errors.push(m.params);});
+const send=(method,params={})=>new Promise((resolve,reject)=>{const k=++id;pending.set(k,{resolve,reject});ws.send(JSON.stringify({id:k,method,params}));});
+const ev=async expression=>{const r=await send('Runtime.evaluate',{expression,returnByValue:true,awaitPromise:true});if(r.exceptionDetails)throw Error(JSON.stringify(r.exceptionDetails));return r.result.value;};
+const delay=ms=>new Promise(r=>setTimeout(r,ms));
+await send('Runtime.enable');await send('Page.enable');await mkdir('screenshots/sphere-sanctuary',{recursive:true});
+await send('Emulation.setDeviceMetricsOverride',{width:1920,height:1080,deviceScaleFactor:1,mobile:false});
+await send('Page.navigate',{url:'http://127.0.0.1:3001/?function=sphere'});
+for(let i=0;i<80;i++){await delay(250);if(await ev('!!window.metazoo'))break;}
+await delay(1000);await ev("document.querySelector('#ui-hint')?.classList.remove('show')");
+const capture=async name=>{await delay(1000);const r=await send('Page.captureScreenshot',{format:'png',captureBeyondViewport:false});await writeFile('screenshots/sphere-sanctuary/'+name+'.png',Buffer.from(r.data,'base64'));};
+await capture('01_sphere_convex_sanctuary_hero');
+await ev("window.metazoo.cameraRig.setPreset('minimum-focus',false)");await capture('02_sanctuary_detail');
+await ev("window.metazoo.cameraRig.setFunctionPreset('sphere',false);window.metazoo.ui.setViewMode('scientific')");await capture('03_scientific');
+await ev("window.metazoo.ui.setViewMode('topographic');window.metazoo.cameraRig.setPreset('top-down',false)");await capture('04_topographic');
+const checks=await ev("({optimum:window.metazoo.world.evaluate(0,0),offCenter:window.metazoo.world.evaluate(1,2),function:window.metazoo.world.getConfig().functionId})");
+await writeFile('screenshots/sphere-sanctuary/qa-results.json',JSON.stringify({checks,errors},null,2));console.log(JSON.stringify({checks,errors}));ws.close();

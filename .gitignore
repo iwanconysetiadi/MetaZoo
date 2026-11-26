@@ -1,4 +1,5 @@
 node_modules/
+.tmp-sky-qa/
 dist/
 *.log
 dev.log

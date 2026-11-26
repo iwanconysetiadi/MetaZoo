@@ -1,0 +1,136 @@
+{
+  "environment": "Local headless Chrome; results reflect this machine and headless rendering only",
+  "results": [
+    {
+      "name": "01_sphere_natural_clean",
+      "function": "sphere",
+      "mode": "natural",
+      "drawCalls": 53,
+      "triangles": 170759,
+      "cloudInstances": 311,
+      "grassInstances": 7000,
+      "shadowSize": 1024,
+      "fps": "FPS 60 · calls 53 · tris 170759 · 128²",
+      "horizontalOverflow": false
+    },
+    {
+      "name": "02_sphere_simulation",
+      "function": "sphere",
+      "mode": "natural",
+      "drawCalls": 57,
+      "triangles": 175687,
+      "cloudInstances": 311,
+      "grassInstances": 7000,
+      "shadowSize": 1024,
+      "fps": "FPS 59 · calls 57 · tris 175687 · 128²",
+      "horizontalOverflow": false
+    },
+    {
+      "name": "03_rastrigin_natural",
+      "function": "rastrigin",
+      "mode": "natural",
+      "drawCalls": 59,
+      "triangles": 158027,
+      "cloudInstances": 311,
+      "grassInstances": 26,
+      "shadowSize": 1024,
+      "fps": "FPS 60 · calls 59 · tris 158027 · 128²",
+      "horizontalOverflow": false
+    },
+    {
+      "name": "04_rastrigin_scientific",
+      "function": "rastrigin",
+      "mode": "scientific",
+      "drawCalls": 160,
+      "triangles": 155179,
+      "cloudInstances": 311,
+      "shadowSize": 1024,
+      "fps": "FPS 60 · calls 160 · tris 155179 · 128²",
+      "horizontalOverflow": false
+    },
+    {
+      "name": "05_rosenbrock_natural",
+      "function": "rosenbrock",
+      "mode": "natural",
+      "drawCalls": 64,
+      "triangles": 158635,
+      "cloudInstances": 311,
+      "grassInstances": 52,
+      "shadowSize": 1024,
+      "fps": "FPS 60 · calls 64 · tris 158635 · 128²",
+      "horizontalOverflow": false
+    },
+    {
+      "name": "06_himmelblau_topographic",
+      "function": "himmelblau",
+      "mode": "topographic",
+      "drawCalls": 643,
+      "triangles": 157167,
+      "cloudInstances": 311,
+      "shadowSize": 1024,
+      "fps": "FPS 60 · calls 643 · tris 157167 · 128²",
+      "horizontalOverflow": false
+    },
+    {
+      "name": "07_twilight",
+      "function": "sphere",
+      "mode": "natural",
+      "drawCalls": 53,
+      "triangles": 170759,
+      "cloudInstances": 311,
+      "grassInstances": 7000,
+      "shadowSize": 1024,
+      "fps": "FPS 60 · calls 53 · tris 170759 · 128²",
+      "horizontalOverflow": false
+    },
+    {
+      "name": "08_world_atlas",
+      "function": "sphere",
+      "mode": "natural",
+      "drawCalls": 53,
+      "triangles": 170759,
+      "cloudInstances": 311,
+      "grassInstances": 7000,
+      "shadowSize": 1024,
+      "fps": "FPS 60 · calls 53 · tris 170759 · 128²",
+      "horizontalOverflow": false
+    },
+    {
+      "name": "09_desktop_controls",
+      "function": "sphere",
+      "mode": "natural",
+      "drawCalls": 56,
+      "triangles": 175687,
+      "cloudInstances": 311,
+      "grassInstances": 7000,
+      "shadowSize": 1024,
+      "fps": "FPS 60 · calls 56 · tris 175687 · 128²",
+      "horizontalOverflow": false
+    },
+    {
+      "name": "10_presentation",
+      "function": "sphere",
+      "mode": "natural",
+      "drawCalls": 53,
+      "triangles": 170759,
+      "cloudInstances": 311,
+      "grassInstances": 7000,
+      "shadowSize": 1024,
+      "fps": "FPS 60 · calls 53 · tris 170759 · 128²",
+      "horizontalOverflow": false
+    },
+    {
+      "name": "11_underside",
+      "function": "sphere",
+      "mode": "natural",
+      "drawCalls": 51,
+      "triangles": 170570,
+      "cloudInstances": 311,
+      "grassInstances": 7000,
+      "shadowSize": 1024,
+      "fps": "FPS 60 · calls 51 · tris 170570 · 128²",
+      "horizontalOverflow": false
+    }
+  ],
+  "errors": []
+}

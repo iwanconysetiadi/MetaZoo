@@ -16,6 +16,7 @@ export default defineConfig({
     target: 'es2022',
   },
   server: {
+    watch: { ignored: ['**/.tmp-*/**', '**/screenshots/sky-world/**'] },
     port: 3000,
     open: true,
   },

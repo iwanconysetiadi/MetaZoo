@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { VISUAL } from './VisualTheme';
 
 const vertexShader = `
   attribute float cost;
@@ -36,6 +37,10 @@ const fragmentShader = `
   uniform float uTime;
   uniform int uVisualizationMode;
   uniform float uIslandMaskEnabled;
+  uniform float uViewStyle;
+  uniform float uSanctuary;
+  uniform vec3 uLowland; uniform vec3 uMoss; uniform vec3 uGrass; uniform vec3 uDry;
+  uniform vec3 uRock; uniform vec3 uRockLight;
 
   uniform int uContourEnabled;
   uniform float uContourCount;
@@ -87,21 +92,21 @@ const fragmentShader = `
     return c.z + c.y * (rgb - 0.5) * (1.0 - abs(2.0 * c.z - 1.0));
   }
   vec3 getBasinColor(float basinId) {
-    float hue = mod(basinId * 137.508, 360.0) / 360.0;
-    return hsl2rgb(vec3(hue, 0.5, 0.52));
+    float t = fract(basinId * 0.618034);
+    return mix(vec3(.31,.48,.43), vec3(.58,.66,.68), t);
   }
 
   // ---- layered natural palette --------------------------------------
   // Best region -> lush lowland; rising cost -> grass, earth, rock, alpine.
   vec3 naturalPalette(float h, float slope, vec2 wp) {
-    vec3 lowland = vec3(0.09, 0.25, 0.12);
-    vec3 moss    = vec3(0.15, 0.36, 0.15);
-    vec3 grass   = vec3(0.27, 0.45, 0.18);
-    vec3 dry     = vec3(0.52, 0.47, 0.24);
-    vec3 earth   = vec3(0.47, 0.35, 0.23);
-    vec3 rock    = vec3(0.40, 0.38, 0.36);
-    vec3 alpine  = vec3(0.57, 0.58, 0.61);
-    vec3 snow    = vec3(0.85, 0.87, 0.91);
+    vec3 lowland = uLowland;
+    vec3 moss    = uMoss;
+    vec3 grass   = uGrass;
+    vec3 dry     = uDry;
+    vec3 earth   = uRockLight;
+    vec3 rock    = uRock;
+    vec3 alpine  = vec3(.56,.61,.60);
+    vec3 snow    = vec3(.81,.85,.82);
 
     vec3 color;
     if (h < 0.12) {
@@ -111,13 +116,13 @@ const fragmentShader = `
     } else if (h < 0.52) {
       color = mix(grass, dry, smoothstep(0.32, 0.52, h));
     } else if (h < 0.70) {
-      color = mix(dry, earth, smoothstep(0.52, 0.70, h));
+      color = mix(grass, dry, smoothstep(0.52, 0.70, h));
     } else if (h < 0.85) {
-      color = mix(earth, rock, smoothstep(0.70, 0.85, h));
+      color = mix(dry, mix(grass, rock, .5), smoothstep(0.70, 0.85, h));
     } else if (h < 0.95) {
-      color = mix(rock, alpine, smoothstep(0.85, 0.95, h));
+      color = mix(mix(grass, rock, .5), alpine, smoothstep(0.85, 0.95, h) * .55);
     } else {
-      color = mix(alpine, snow, smoothstep(0.95, 1.0, h));
+      color = mix(mix(grass, alpine, .55), snow, smoothstep(0.95, 1.0, h) * .25);
     }
 
     // Steep faces shed vegetation -> exposed rock.
@@ -129,6 +134,12 @@ const fragmentShader = `
     float forest = smoothstep(0.60, 0.9, vnoise(wp * 0.16));
     color = mix(color, moss * 0.92, veg * forest * 0.12);
 
+    float edgeDistance = min(min(vUv.x, 1.0-vUv.x), min(vUv.y, 1.0-vUv.y));
+    float edgeBand = 1.0-smoothstep(0.0,.035,edgeDistance);
+    color = mix(color, mix(moss, rock, .4), edgeBand * .22);
+    vec3 sanctuary = mix(pow(vec3(.129,.306,.227),vec3(2.2)),pow(vec3(.31,.459,.333),vec3(2.2)),smoothstep(.04,.94,h));
+    sanctuary *= .94 + vnoise(wp * .19) * .12;
+    color = mix(color,sanctuary,uSanctuary * .97 * (1.0-rockiness*.5));
     return color;
   }
 
@@ -139,7 +150,7 @@ const fragmentShader = `
   }
 
   void main() {
-    // Natural view crops only the presentation mesh. Objective sampling remains rectangular internally.
+    // All modes share the same presentation silhouette. Objective sampling remains rectangular internally.
     if (uIslandMaskEnabled > 0.5) {
       vec2 edgeUv = (vUv - 0.5) * 2.0;
       float angle = atan(edgeUv.y, edgeUv.x);
@@ -173,16 +184,22 @@ const fragmentShader = `
 
     if (uContourEnabled == 1) {
       float line = contourLine(vNormalizedCost);
-      color = mix(color, vec3(0.92, 0.94, 0.97), line * uContourOpacity);
+      float level = floor(vNormalizedCost * uContourCount);
+      float major = 1.0 - step(.5, mod(level, 5.0));
+      color = mix(color, mix(vec3(.92,.94,.92), vec3(.96,.94,.86), major),
+        line * mix(.24, .55, major));
     }
     if (uBasinOverlayEnabled == 1) {
       color = mix(color, getBasinColor(vBasinId), 0.30);
     }
     if (uCurvatureOverlayEnabled == 1) {
       float curvVis = clamp(vCurvature * 0.5 + 0.5, 0.0, 1.0);
-      vec3 curvTint = mix(vec3(0.34, 0.48, 0.60), vec3(0.60, 0.48, 0.64), curvVis);
+      vec3 curvTint = mix(vec3(0.34, 0.48, 0.60), vec3(.48,.61,.54), curvVis);
       color = mix(color, curvTint, 0.22);
     }
+
+    float luminance = dot(color, vec3(.2126,.7152,.0722));
+    color = mix(color, vec3(luminance), uViewStyle > .5 ? .22 : 0.0);
 
     // ---- micro-normal perturbation (shader-only; geometry untouched) ----
     vec3 n = normalize(vNormal);
@@ -217,7 +234,9 @@ const fragmentShader = `
       - 0.26 * smoothstep(0.30, 0.95, vSlope)
       - 0.12 * smoothstep(0.7, 1.8, vCurvature);
 
-    color *= (skyFill + sun + bounce + 0.05) * clamp(ao, 0.55, 1.0);
+    vec3 lighting = (skyFill + sun + bounce + .08) * clamp(ao, .62, 1.0);
+    lighting = mix(lighting, vec3(.85) + lighting * .15, step(1.5, uViewStyle));
+    color *= lighting;
 
     // roughness varies by material region; rock reads with a restrained sheen
     float rockMask = smoothstep(0.42, 0.85, vSlope);
@@ -239,6 +258,8 @@ const fragmentShader = `
 
     color = clamp(color, 0.0, 1.2);
     gl_FragColor = vec4(color, alpha);
+    #include <tonemapping_fragment>
+    #include <colorspace_fragment>
   }
 `;
 
@@ -248,6 +269,14 @@ export class TerrainMaterial extends THREE.ShaderMaterial {
   constructor() {
     const uniforms = {
       uTime: { value: 0 },
+      uViewStyle: { value: 0 },
+      uSanctuary: { value: 0 },
+      uLowland: { value: new THREE.Color(VISUAL.terrainLow) },
+      uMoss: { value: new THREE.Color(VISUAL.terrainMoist) },
+      uGrass: { value: new THREE.Color(VISUAL.terrainGrass) },
+      uDry: { value: new THREE.Color(VISUAL.terrainDry) },
+      uRock: { value: new THREE.Color(VISUAL.rockMid) },
+      uRockLight: { value: new THREE.Color(VISUAL.rockLight) },
       uIslandMaskEnabled: { value: 0 },
       uVerticalScale: { value: 1.0 },
       uHeightMapping: { value: 1 },
@@ -263,10 +292,10 @@ export class TerrainMaterial extends THREE.ShaderMaterial {
       uDomainMax: { value: new THREE.Vector2(5, 5) },
       uBasinTexture: { value: null },
       uBasinColors: { value: null },
-      uSunDir: { value: new THREE.Vector3(0.62, 0.52, 0.42).normalize() },
-      uSunColor: { value: new THREE.Color(0xfff0d6) },
-      uSkyColor: { value: new THREE.Color(0xdce7f8) },
-      uHorizonColor: { value: new THREE.Color(0xf3e8e2) },
+      uSunDir: { value: new THREE.Vector3(-.55, .70, -.45).normalize() },
+      uSunColor: { value: new THREE.Color(0xffd7a6) },
+      uSkyColor: { value: new THREE.Color(0xb8d0dc) },
+      uHorizonColor: { value: new THREE.Color(0xafc5d2) },
       uHazeDensity: { value: 0.0014 },
       uHazeStrength: { value: 0.30 },
     };

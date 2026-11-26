@@ -313,13 +313,23 @@ The following engine-only hardening has been added without changing the UI/UX:
 - **Run manager** — `RunManager` retains independent runs for a world.
 - **Export helpers** — `exportTelemetryCsv`, `exportRunHistory`, and
   `exportRunBundle` produce config, telemetry CSV, and history JSON.
-- **Tests** — headless determinism, checkpoint resume, capabilities, and audit
-  logging are covered in `tests/simulation.test.ts`.
+- **Candidate lifecycle** — engine detects created/activated/deactivated/
+  reinitialized/removed candidates between logical states and publishes ordered
+  events with `eventSequence`.
+- **Optimizer event bus** — `optimizerEventBus` publishes optimizer/lifecycle
+  events independent of rendering.
+- **History strategies** — `FULL`, `INTERVAL`, `RING`, and `NONE` with
+  configurable sampling interval.
+- **Centroid/spread telemetry** — recorded for populations with `N > 1` and
+  included in telemetry CSV export.
+- **Tests** — headless determinism, checkpoint resume, capabilities, audit
+  logging, event ordering, history strategies, and centroid telemetry are
+  covered in `tests/simulation.test.ts`.
 
-Not yet implemented from the addendum: variable-population stress paths, full
-candidate lifecycle events, advanced visualization layers, camera-follow modes,
-stagnation hooks, and the full research UI. The simulation foundation is now
-ready for Phase 3 optimizer plugins without further engine redesign.
+Not yet implemented from the addendum: variable-population stress paths,
+advanced visualization layers, camera-follow modes, stagnation hooks, and the
+full research UI. The simulation foundation is now ready for Phase 3 optimizer
+plugins without further engine redesign.
 
 ## 18. Remaining Limitations
 
@@ -334,3 +344,71 @@ ready for Phase 3 optimizer plugins without further engine redesign.
 - Existing critical-point/oasis overlays can visually overlap simulation markers.
 - The UI is optimized for desktop; the control strip and panel are responsive but not
   designed for touch-first use.
+
+
+## Cool Sky World ? desktop presentation update
+
+Desktop/web is the primary design target; visual QA uses 1920 x 1080.
+
+- Shared visual tokens drive dark glass UI, cool blue sky, ivory clouds, jade terrain and mineral rock.
+- CloudSystem supplies layered instanced clouds and quality presets; grass and underside detail also scale by quality.
+- IslandPresentation contains rock masses, timber braces, roots, terraces, sparse gardens, debris and a small walkway/lantern composition. Camera > Advanced > Underside View inspects these details.
+- The entire rectangular objective domain is mapped invertibly to the organic island through IslandProjection. All three view modes use the same mapping. Domain coordinates, objective values and optimizer state remain authoritative; distances in the rendered island are not Cartesian distances in the objective domain.
+- The running-area boundary follows the mapped x1/x2 limits. Probe picking applies the inverse mapping, and gradient arrows use the projected direction.
+- Waterfalls use sparse animated strands, wet outlets and soft mist. Sphere has one flow; other supported worlds have at most two.
+- Agents use ivory/jade and muted gold. Trails retain five logical positions; Natural defaults to off, analysis defaults to short, and the run panel can override trails and show a separate best path.
+
+Validation:
+
+- 139 tests passed across seven project test files, including organic coordinate round trips, coastline limits and objective-value preservation.
+- TypeScript and Vite production build passed. The existing single-bundle size warning remains.
+- Desktop screenshots and renderer measurements: screenshots/sky-world/. qa-results.json records draw calls, triangles, instances, shadow size and observed headless FPS for each view.
+- Sphere Natural / Balanced at 1920 x 1080: 53 draw calls, 170759 triangles, 311 cloud instances, 7000 grass instances, 1024 shadow map. Headless Chrome observed 60 FPS on this machine; this is not a general device-performance guarantee.
+- No JavaScript exceptions or shader errors were recorded during the desktop scenarios.
+
+
+### Desktop visual correction pass
+
+The hero coastline now uses broad asymmetric lobes and recesses, shared by the inverse coordinate mapping and the simulation boundary. The rock body extends through several fractured layers to a lower tip, with four main hanging formations, seven secondary tongues and twelve sparse fragments in Balanced mode. Three principal root systems and two timber zones keep the underside primarily geological. Clouds are composed as overlapping clusters of 10-20 volumes, with a foreground bank, dense lower sea, uneven middle groups and high background groups. A wider waterfall source feeds three separate falling flows and fades into mist. The hero camera is offset and lowered to include the full rock silhouette and open sky. Sphere receives a greener sanctuary material; objective values remain unchanged.
+
+
+## Desktop UI system refinement
+
+The navigation now groups the contour monogram, METAZOO wordmark, world name and subtitle in one horizontal identity block. Header chrome shares one sans-serif scale, ivory text, dark glass surfaces and jade selection states. Classification remains in Function Profile. The telemetry HUD and dock share a bottom baseline, with contextual panels aligned above the dock.
+
+- Consistent SVG icons, focus styles, keyboard switches, 300 ms tooltips and dark custom select menus.
+- Atlas collection tabs, saved-world empty states, current-world selection and function-derived contour thumbnails.
+- Dialog Escape handling, focus containment and focus restoration; one contextual panel at a time.
+- Visual quality presets with resolution, normalization and vertical scale in Advanced settings.
+- Compact Simulation controls, semantic lifecycle badges and a collapsed History & export section.
+- Camera gives Cinematic Survey the primary action, followed by Overview / Orbit / Top, Focus optimum and a collapsed list of additional viewpoints.
+- Probe retains x1, x2 and objective value in Natural, adding gradient, slope, curvature and basin in Scientific.
+- Custom Function editor shows a live formatted expression with superscripts; formula evaluation is unchanged.
+- Canvas click actions occur after mouse release with a six-pixel drag threshold; UI keyboard interaction does not trigger world shortcuts.
+
+QA artifacts are in screenshots/ui-system/. Local headless Chrome checks cover 1920 x 1080, 1440 x 900 and 1280 x 720, including one-line identity, header separation, bottom alignment, Atlas, dropdowns, panel exclusivity, math preview, camera hierarchy, analysis modes and presentation. Existing unit suite: 139 tests passed. Production build passes, with the existing large single-bundle warning.
+
+
+### Context panel anchoring revision
+
+Dock panels now anchor above their actual trigger, with horizontal viewport clamping and resize-aware placement. Settings anchors below its header trigger. Simulation follows the same dock placement. Opening Probe enables inspection; closing it or switching tools disables inspection. The Probe panel keeps the three latest pinned readings, while hover values remain next to the cursor. Probe pin callbacks still feed the existing measurement tool. Escape restores focus to the originating control. No new automated tests were run for this interaction revision.
+
+
+## Sphere: The Convex Sanctuary
+
+Sphere now uses its own render-only sanctuary instead of the generic halo, tiny pond and cone-tree ring. The revised pool has a seven-unit radius (reduced from the initial thirteen-unit treatment following visual feedback), irregular weathered stone coping, moss patches, animated jade ripples and a low exact-center marker. Eight differently sized, crooked-trunk trees form unequal groups; one nineteen-unit ancestor pine, exposed roots, a tiny lantern and a bench establish scale. A staggered stone path leads toward the pool. Branches, roots and stone are merged; canopy clusters are instanced.
+
+Shorter instanced grass extends over the broad lawn with a soft reduction toward the cliffs. A small coastal rill feeds the existing single waterfall; it does not draw an uphill river from the mathematically low center. The existing organic coastline, fractured underside, roots, debris, cloud sea and layered sky remain the main world composition. Distant islands now use fractured rock silhouettes; Sphere receives lighter foreground haze so vegetation remains readable.
+
+Natural shows the complete sanctuary; Scientific retains environmental context with the existing contour treatment; Topographic hides trees and peripheral sanctuary props. Decoration never changes Sphere evaluation, optimization coordinates, simulation bounds or agent projection. Runtime checks confirm f(0,0)=0 and f(1,2)=5. The latest one-line desktop header is preserved.
+
+Requested hero artifact: screenshots/sphere-sanctuary/01_sphere_convex_sanctuary_hero.png. Detail, Scientific and Topographic screenshots and runtime results are stored alongside it.
+
+Validation for the Sphere revision: 141 tests passed across seven test files, production build passed (existing bundle-size warning), and the three scene views recorded no JavaScript exceptions in local headless Chrome.
+
+
+### Shared oasis treatment across other worlds
+
+Non-Sphere worlds now use jade ripple water, irregular weathered stone coping, moss patches and unequal clusters of crooked-trunk trees. The generic halo discs and cone-tree ring have been removed. Radius adapts to the local sampled height variation and nearest other global optimum; vegetation footprints reserve space between adjacent oases. Water follows the sampled terrain and triangles outside the x1/x2 domain are omitted. No objective samples or optimum coordinates are changed. The precise center marker is retained in all modes; Scientific reduces vegetation and Topographic removes it. Grass exclusions now follow every global optimum, including off-center and multiple optima. Sphere retains its separate sanctuary, ancestor pine, lantern, bench and path.
+
+This change received a TypeScript compilation check; no new automated tests or browser verification were requested for this pass.

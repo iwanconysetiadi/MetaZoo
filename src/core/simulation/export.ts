@@ -13,6 +13,7 @@ export function exportTelemetryCsv(telemetry: TelemetryData): string {
   const headers = [
     'iteration', 'evaluations', 'bestFitness', 'meanFitness', 'worstFitness',
     'diversity', 'feasibleRatio', 'distanceToReference',
+    'centroidX', 'centroidY', 'spread',
   ] as const;
   const lines = [headers.join(',')];
   for (let i = 0; i < telemetry.iteration.length; i++) {

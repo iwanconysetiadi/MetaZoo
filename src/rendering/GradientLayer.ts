@@ -45,7 +45,7 @@ export class GradientLayer {
 
     const arrowGeometry = new THREE.ConeGeometry(0.3, 1, 8);
     const arrowMaterial = new THREE.MeshBasicMaterial({
-      color: 0x00ff88,
+      color: 0x78b8a4,
       transparent: true,
       opacity: 0.8,
       depthWrite: false,
@@ -63,8 +63,11 @@ export class GradientLayer {
 
         if (mag < 1e-4) continue;
 
-        const dirX = gx / mag;
-        const dirZ = gz / mag;
+        const origin = this.world.optimizationToWorld(x1,x2);
+        const eps = Math.min(domainWidth,domainHeight) * 1e-4;
+        const along = this.world.optimizationToWorld(x1 + gx/mag*eps, x2 + gz/mag*eps);
+        const dirX = along.x-origin.x;
+        const dirZ = along.z-origin.z;
         const length = Math.min(mag * this.scale * 2, 5);
 
         const { x, z } = this.world.optimizationToWorld(x1, x2);

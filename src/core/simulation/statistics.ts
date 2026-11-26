@@ -62,6 +62,8 @@ export function computeStatistics(
     diversity: active.length > 1 ? diversitySum / active.length : 0,
     feasibleRatio: feasibleCount / active.length,
     candidateCount: active.length,
+    centroid: active.length > 1 ? { x: cx, y: cy } : undefined,
+    spread: active.length > 1 ? Math.sqrt(diversitySum / active.length) : 0,
   };
 
   return {

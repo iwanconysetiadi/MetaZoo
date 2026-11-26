@@ -53,6 +53,7 @@ export class SimulationEngine {
   private failedIteration: number | null = null;
   private compatibility: CompatibilityResult | null = null;
   readonly eventBus = new EventBus<SimulationEngineEvent>();
+  readonly optimizerEventBus = new EventBus<OptimizerEvent>();
   private boundRevision = -1;
 
   private renderAlpha = 1;
@@ -94,6 +95,8 @@ export class SimulationEngine {
       targetTolerance: setup.targetTolerance,
       optimizerParameters: deepClone(setup.optimizerParameters ?? {}),
       createdAt: setup.createdAt ?? new Date().toISOString(),
+      historyStrategy: setup.historyStrategy ?? 'FULL',
+      historyInterval: setup.historyInterval ?? 10,
     };
 
     if (this.optimizer?.dispose) this.optimizer.dispose();
@@ -116,6 +119,7 @@ export class SimulationEngine {
 
     this.clock = new SimulationClock(this.config.logicalDelta, this.config.iterationsPerSecond);
     this.history.clear();
+    this.history.setStrategy(this.config.historyStrategy ?? 'FULL', this.config.historyInterval ?? 10);
     this.telemetry.clear();
     this.boundRevision = this.world.getRevision();
     this.status = 'READY';
@@ -322,7 +326,8 @@ export class SimulationEngine {
     }
 
     const nextIteration = this.clock.iteration + 1;
-    const events = result.events ?? [];
+    const lifecycle = this.detectLifecycle(this.state, raw, nextIteration);
+    const events = this.assignEventSequences([...(result.events ?? []), ...lifecycle], nextIteration);
     const next = this.finalizeState(raw, nextIteration, events);
 
     this.previousState = cloneOptimizerState(this.state);
@@ -330,6 +335,7 @@ export class SimulationEngine {
     this.clock.recordStep();
     this.renderAlpha = 0;
     this.captureSnapshot(next, events);
+    for (const event of events) this.optimizerEventBus.publish(event.type, event);
 
     this.world.setSimTime(this.clock.simulationTime);
     this.callbacks.onWorldTimeChanged?.(this.clock.simulationTime);
@@ -516,6 +522,8 @@ export class SimulationEngine {
       targetTolerance: this.config.targetTolerance,
       optimizerParameters: deepClone(this.config.optimizerParameters),
       createdAt: this.config.createdAt,
+      historyStrategy: this.config.historyStrategy,
+      historyInterval: this.config.historyInterval,
     };
   }
 
@@ -692,6 +700,59 @@ export class SimulationEngine {
     state.statistics = statistics;
     state.best = best;
     return state;
+  }
+
+  private assignEventSequences(events: OptimizerEvent[], iteration: number): OptimizerEvent[] {
+    return events.map((event, index) => ({
+      ...event,
+      iteration: event.iteration ?? iteration,
+      eventSequence: event.eventSequence ?? index,
+      data: event.data ? deepClone(event.data) : undefined,
+      candidateIds: event.candidateIds ? [...event.candidateIds] : undefined,
+    }));
+  }
+
+  private detectLifecycle(
+    previous: OptimizerState,
+    current: OptimizerState,
+    iteration: number,
+  ): OptimizerEvent[] {
+    const events: OptimizerEvent[] = [];
+    const before = new Map(previous.candidates.map(c => [c.id, c]));
+    const after = new Map(current.candidates.map(c => [c.id, c]));
+
+    for (const candidate of current.candidates) {
+      const old = before.get(candidate.id);
+      if (!old) {
+        events.push(this.lifecycleEvent('candidate-created', iteration, [candidate.id]));
+      } else if (old.active !== candidate.active) {
+        events.push(this.lifecycleEvent(
+          candidate.active ? 'candidate-activated' : 'candidate-deactivated',
+          iteration, [candidate.id],
+        ));
+      }
+      if (old && old.bestPosition && candidate.bestPosition &&
+          (old.bestPosition.x !== candidate.bestPosition.x || old.bestPosition.y !== candidate.bestPosition.y) &&
+          Math.hypot(candidate.position.x - old.position.x, candidate.position.y - old.position.y) > 1e-9) {
+        events.push(this.lifecycleEvent('candidate-reinitialized', iteration, [candidate.id]));
+      }
+    }
+
+    for (const old of previous.candidates) {
+      if (!after.has(old.id)) events.push(this.lifecycleEvent('candidate-removed', iteration, [old.id]));
+    }
+    return events;
+  }
+
+  private lifecycleEvent(
+    type: import('./types').CandidateLifecycleType, iteration: number, candidateIds: string[],
+  ): OptimizerEvent {
+    return {
+      id: `${type}-${iteration}-${candidateIds.join('-')}`,
+      type,
+      iteration,
+      candidateIds,
+    };
   }
 
   private validateState(state: OptimizerState, previousEvaluations: number): string | null {

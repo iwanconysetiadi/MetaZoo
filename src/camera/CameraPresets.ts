@@ -1,4 +1,5 @@
 export const CAMERA_PRESETS: Array<{ id: string; name: string; description: string }> = [
+  { id: 'underside', name: 'Underside View', description: 'Inspect rock, roots and ancient sky anchors' },
   { id: 'overview', name: 'World Overview', description: 'Framed view of the whole floating world' },
   { id: 'orbit', name: 'Orbit', description: 'Free orbital exploration around the landscape' },
   { id: 'top-down', name: 'Top-Down', description: 'Scientific contour view from above' },

@@ -67,6 +67,9 @@ class MetazooApp {
   private simRebuildThrottle = 0;
 
   private isDragging = false;
+  private dragStartX = 0;
+  private dragStartY = 0;
+  private dragDistance = 0;
   private lastMouseX = 0;
   private lastMouseY = 0;
   private isMiddleDown = false;
@@ -182,7 +185,7 @@ class MetazooApp {
   private initializeInteraction(): void {
     this.terrainProbe = new TerrainProbe(this.world, this.sceneManager, this.sceneManager.getCamera());
     this.terrainProbe.setHoverCallback((data) => this.ui.setProbe(data));
-    this.terrainProbe.setPinCallback((data) => this.measurementTool.addPoint(data));
+    this.terrainProbe.setPinCallback((data) => { this.measurementTool.addPoint(data); this.ui.addPinnedProbe(data); });
 
     this.measurementTool = new MeasurementTool(this.world, this.sceneManager);
     this.measurementTool.setCallback((measurement) => {
@@ -207,6 +210,7 @@ class MetazooApp {
       onViewModeChange: (mode) => this.onViewModeChange(mode),
       onOverlayToggle: (key, value) => this.onOverlayToggle(key, value),
       onContourCountChange: (count) => this.onContourCountChange(count),
+      onVisualQualityChange: (quality) => { this.config.visualQuality = quality; this.sceneManager.updateQuality(quality); this.rebuildAll(); },
       onResolutionChange: (res) => this.onResolutionChange(res),
       onVerticalScaleChange: (scale) => this.onVerticalScaleChange(scale),
       onNormalizationChange: (mode) => this.onNormalizationChange(mode),
@@ -216,6 +220,7 @@ class MetazooApp {
       onAtmosphereChange: (mode) => {
         this.sceneManager.setAtmosphere(mode);
         this.waterRenderer.setAtmosphere(mode);
+        this.oasisRenderer.setAtmosphere(mode);
       },
       onPresentationToggle: (on) => this.onPresentationToggle(on),
       onProbeEnabledChange: (on) => this.terrainProbe.setEnabled(on),
@@ -236,6 +241,8 @@ class MetazooApp {
     this.agentRenderer.setPickCallback((candidate) => this.simUI.showCandidate(candidate));
     this.simUI = new SimulationUI(this.simEngine, {
       onBeforeOpen: () => this.ui?.closeTool(),
+      onTrailsChange: enabled => this.agentRenderer.setTrailsEnabled(enabled),
+      onBestPathChange: enabled => this.agentRenderer.setBestPathEnabled(enabled),
     });
     this.handleDeepLinkSimParams();
   }
@@ -510,7 +517,7 @@ class MetazooApp {
 
   private onPresentationToggle(on: boolean): void {
     this.presentationMode = on;
-    this.terrainProbe.setEnabled(!on);
+    this.terrainProbe.setEnabled(!on && this.ui.getProbeEnabled());
     if (on) this.ui?.setProbe(null);
   }
 
@@ -527,28 +534,18 @@ class MetazooApp {
   private onMouseDown(event: MouseEvent): void {
     if (event.target !== this.canvas) return;
 
-    this.isDragging = true;
+    this.isDragging = true; this.dragStartX = event.clientX; this.dragStartY = event.clientY; this.dragDistance = 0;
     this.lastMouseX = event.clientX;
     this.lastMouseY = event.clientY;
     this.isMiddleDown = event.button === 1;
     this.isRightDown = event.button === 2;
-
-    if (event.button === 0 && !this.presentationMode) {
-      if (this.agentRenderer.tryPick(event)) {
-        event.preventDefault();
-        return;
-      }
-      this.terrainProbe.handleMouseMove(event);
-    } else if (event.button === 2) {
-      this.terrainProbe.handleClick(event);
-    }
 
     event.preventDefault();
   }
 
   private onMouseMove(event: MouseEvent): void {
     if (!this.isDragging) {
-      this.terrainProbe.handleMouseMove(event);
+      if (event.target === this.canvas) this.terrainProbe.handleMouseMove(event); else this.ui.setProbe(null);
       return;
     }
 
@@ -557,9 +554,11 @@ class MetazooApp {
     this.lastMouseX = event.clientX;
     this.lastMouseY = event.clientY;
 
+    this.dragDistance = Math.max(this.dragDistance, Math.hypot(event.clientX - this.dragStartX, event.clientY - this.dragStartY));
+    if (this.dragDistance < 6) return;
     if (this.isMiddleDown || (this.isRightDown && event.shiftKey)) {
       this.cameraRig.pan(dx * 0.01, dy * 0.01);
-    } else if (this.isRightDown) {
+    } else {
       this.cameraRig.orbit(dx * 0.005, dy * 0.005);
     }
 
@@ -567,6 +566,10 @@ class MetazooApp {
   }
 
   private onMouseUp(event: MouseEvent): void {
+    if (this.isDragging && this.dragDistance < 6 && event.target === this.canvas && !this.presentationMode) {
+      if (event.button === 0) { if (!this.agentRenderer.tryPick(event)) this.terrainProbe.handleClick(event); }
+      else if (event.button === 2) this.terrainProbe.handleClick(event);
+    }
     this.isDragging = false;
     this.isMiddleDown = false;
     this.isRightDown = false;
@@ -578,7 +581,7 @@ class MetazooApp {
   }
 
   private onKeyDown(event: KeyboardEvent): void {
-    if (event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement) return;
+    if (event.defaultPrevented || (event.target instanceof Element && event.target.closest('input,textarea,button,select,[role=dialog]'))) return;
 
     switch (event.key) {
       case ' ':
@@ -829,6 +832,7 @@ class MetazooApp {
     this.basinLayer.rebuild();
     this.criticalPointLayer.rebuild();
     this.oasisRenderer.rebuild();
+    this.sceneManager.rebuildWaterfalls();
     this.domainRenderer.rebuild();
     this.domainRenderer.setMode(this.config.viewMode);
 
@@ -844,11 +848,15 @@ class MetazooApp {
   private update(deltaTime: number): void {
     this.cameraRig.update(deltaTime);
     this.terrainRenderer.update(deltaTime);
+    const lighting = this.sceneManager.getLightingState();
+    this.terrainRenderer.getMaterial().setAtmosphere(lighting.horizon,.12);
+    this.terrainRenderer.getMaterial().uniforms.uSunColor.value.copy(lighting.sun);
     this.oasisRenderer.update(deltaTime);
     this.criticalPointLayer.updateBeacons(deltaTime);
     this.waterRenderer.update(deltaTime);
 
     if (this.simEngine) {
+      this.domainRenderer.setSimulationActive(this.simEngine.hasRun());
       this.simEngine.advance(deltaTime);
       this.agentRenderer.update(this.simEngine.getRenderFrame());
       this.simUI.update();
@@ -926,28 +934,18 @@ function removeBootStatus(): void {
   document.getElementById('boot-status')?.remove();
 }
 
-function showFatalError(stage: string, error: unknown, config?: WorldConfiguration): void {
+function showFatalError(stage: string, error: unknown, _config?: WorldConfiguration): void {
   console.error('[METAZOO] Initialization failed at', stage, error);
   removeBootStatus();
 
-  const detail = error instanceof Error ? `${error.message}\n\n${error.stack ?? ''}` : String(error);
-  const panel = document.createElement('div');
-  panel.id = 'fatal-error';
-  panel.style.cssText = [
-    'position:fixed', 'inset:0', 'z-index:9999', 'display:flex',
-    'align-items:center', 'justify-content:center',
-    'background:rgba(9,13,18,0.94)', 'padding:24px',
-    'font-family:JetBrains Mono, monospace', 'color:#dfe7ef',
-  ].join(';');
-  panel.innerHTML = `
-    <div style="max-width:680px;border:1px solid #d9695f;border-radius:12px;padding:20px;background:#131a22">
-      <div style="color:#d9695f;font-weight:700;letter-spacing:.1em;margin-bottom:10px">UNABLE TO BUILD LANDSCAPE</div>
-      <div style="font-size:12px;color:#8ea0b3;margin-bottom:10px">Stage: <b style="color:#dfe7ef">${stage}</b>${
-        config ? ` &nbsp;·&nbsp; Function: <b style="color:#dfe7ef">${config.functionId}</b> &nbsp;·&nbsp; Resolution: <b style="color:#dfe7ef">${config.resolution}</b>` : ''
-      }</div>
-      <pre style="white-space:pre-wrap;font-size:11px;color:#b9c6d4;max-height:50vh;overflow:auto;margin:0">${detail}</pre>
-      <div style="font-size:11px;color:#8ea0b3;margin-top:12px">Open diagnostics (append <code>?debug=1</code>) for detailed logs.</div>
-    </div>`;
+  const panel = document.createElement('div'); panel.id = 'fatal-error';
+  panel.setAttribute('role', 'alert');
+  panel.style.cssText = 'position:fixed;inset:0;z-index:9999;display:grid;place-items:center;background:rgba(9,18,26,.94);padding:24px;color:#eef2ee;font-family:var(--font-ui,sans-serif)';
+  const card = document.createElement('div'); card.className = 'fatal-card'; card.style.cssText = 'max-width:420px;padding:24px;border:1px solid rgba(230,238,236,.13);border-radius:12px;background:#14232e';
+  const title = document.createElement('h2'); title.textContent = 'This world could not load'; title.style.fontSize = '18px';
+  const message = document.createElement('p'); message.textContent = 'Reload the world to try again. Technical details are available in the browser console.'; message.style.cssText = 'font-size:13px;line-height:1.6;color:#a9b6b8;margin:16px 0';
+  const reload = document.createElement('button'); reload.className = 'btn primary'; reload.textContent = 'Reload world'; reload.addEventListener('click', () => location.reload());
+  card.append(title, message, reload); panel.append(card);
   document.body.appendChild(panel);
 }
 

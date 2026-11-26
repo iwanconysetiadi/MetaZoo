@@ -6,10 +6,11 @@ export class WaterRenderer {
   private sceneManager: any;
   private waterPlane: THREE.Mesh | null = null;
   private visible = false;
+  private waterPhase = 0;
   private atmosphereValue = 0;
   private atmosphereTarget = 0;
-  private readonly goldenWater = new THREE.Color(0x568f8b);
-  private readonly twilightWater = new THREE.Color(0x194e68);
+  private readonly goldenWater = new THREE.Color(0x315c5a);
+  private readonly twilightWater = new THREE.Color(0x253d58);
 
   constructor(world: OptimizationWorld, sceneManager: any) {
     this.world = world;
@@ -79,21 +80,23 @@ export class WaterRenderer {
   }
 
   update(deltaTime: number): void {
-    this.atmosphereValue += (this.atmosphereTarget - this.atmosphereValue) * (1 - Math.exp(-Math.max(0, deltaTime) / 0.9));
+    this.atmosphereValue += (this.atmosphereTarget - this.atmosphereValue) * (1 - Math.exp(-Math.max(0, deltaTime) / 1.2));
     if (this.waterPlane) {
       const material = this.waterPlane.material as THREE.MeshPhysicalMaterial;
       material.color.lerpColors(this.goldenWater, this.twilightWater, this.atmosphereValue);
     }
     if (!this.waterPlane) return;
     
-    const t = Date.now() * 0.001;
+    const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    this.waterPhase += Math.min(deltaTime, .1) * THREE.MathUtils.lerp(.65, .40, this.atmosphereValue) * (reduced ? .1 : 1);
+    const t = this.waterPhase;
     const positions = this.waterPlane.geometry.attributes.position;
     
     for (let i = 0; i < positions.count; i++) {
       const x = positions.getX(i);
-      const z = positions.getZ(i);
+      const z = positions.getY(i);
       const wave = Math.sin(x * 0.1 + t) * Math.cos(z * 0.1 + t * 0.7) * 0.15;
-      positions.setY(i, wave);
+      positions.setZ(i, wave);
     }
     positions.needsUpdate = true;
     this.waterPlane.geometry.computeVertexNormals();
